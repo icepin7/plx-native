@@ -1,10 +1,11 @@
-{"updated":"2026-10-29T18:44:40Z",
+{"updated":"2026-10-29T18:52:43Z",
 "ci":[
 {"id":40912049723,"at":"2026-10-29T16:29:17Z","sha":"decb0aafa","title":"CI: the globals rule names the registry readers it missed, and the forks rule reads every machine crate","pr":1134,"conclusion":"success","attempt":1,"jobs":{"which gates apply":4,"armv7 cross-build and artifact assertions":428,"host unit tests (default features)":303,"host harness tests":365,"host lint + type-checks":239,"host python/shell/C gates":199,"host unit tests (hostsim)":348,"host checks (NOT a device gate)":4,"cross-build (armv7) + artifact assertions":4}},
 {"id":40932554715,"at":"2026-10-29T18:37:27Z","sha":"b763b41db","title":"CI: a ledger or allowlist count that rises above the base branch's fails the PR","pr":1135,"conclusion":"success","attempt":1,"jobs":{"which gates apply":6,"host unit tests (hostsim)":353,"host harness tests":351,"host unit tests (default features)":406,"host python/shell/C gates":236,"host lint + type-checks":151,"armv7 cross-build and artifact assertions":338,"cross-build (armv7) + artifact assertions":3,"host checks (NOT a device gate)":4}}
 ],
 "sim":[
-{"id":40912049808,"at":"2026-10-29T16:29:17Z","sha":"decb0aafa","title":"CI: the globals rule names the registry readers it missed, and the forks rule reads every machine crate","pr":1134,"conclusion":"failure","attempt":1,"jobs":{"Linux simulator build + launch":416,"Windows launcher syntax":18}}
+{"id":40912049808,"at":"2026-10-29T16:29:17Z","sha":"decb0aafa","title":"CI: the globals rule names the registry readers it missed, and the forks rule reads every machine crate","pr":1134,"conclusion":"failure","attempt":1,"jobs":{"Linux simulator build + launch":416,"Windows launcher syntax":18}},
+{"id":40932554645,"at":"2026-10-29T18:37:27Z","sha":"b763b41db","title":"CI: a ledger or allowlist count that rises above the base branch's fails the PR","pr":1135,"conclusion":"success","attempt":1,"jobs":{"Windows launcher syntax":34,"macOS simulator build + launch":296,"Linux simulator build + launch":286,"macOS tests against bundled FFmpeg and ASS":410}}
 ],
 "nightly":[],
 "cancelled":{},
