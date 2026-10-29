@@ -1,6 +1,6 @@
 {
  "flaky": [],
- "generated": "2026-10-29T18:52:46Z",
+ "generated": "2026-10-29T20:49:38Z",
  "metrics": [
   {
    "change30_pct": null,
@@ -12,9 +12,9 @@
    "id": "push_wait",
    "kind": "wait",
    "label": "Wait after merge",
-   "n_now": 1,
+   "n_now": 2,
    "n_prev": 0,
-   "now": 410,
+   "now": 330.0,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -42,27 +42,6 @@
    "state30": "new",
    "threshold_abs": 240.0,
    "threshold_pct": 15.0,
-   "unit": "s"
-  },
-  {
-   "change30_pct": null,
-   "change7_pct": null,
-   "d30": null,
-   "delta30": null,
-   "delta7": null,
-   "group": "ci",
-   "id": "sim|macOS tests against bundled FFmpeg and ASS",
-   "kind": "job",
-   "label": "Simulator CI: macOS tests against bundled FFmpeg and ASS",
-   "n_now": 1,
-   "n_prev": 0,
-   "now": 410,
-   "prev7": null,
-   "shown": true,
-   "state": "new",
-   "state30": "new",
-   "threshold_abs": 30.0,
-   "threshold_pct": 20.0,
    "unit": "s"
   },
   {
@@ -156,12 +135,33 @@
    "delta30": null,
    "delta7": null,
    "group": "ci",
+   "id": "sim|macOS tests against bundled FFmpeg and ASS",
+   "kind": "job",
+   "label": "Simulator CI: macOS tests against bundled FFmpeg and ASS",
+   "n_now": 2,
+   "n_prev": 0,
+   "now": 273.5,
+   "prev7": null,
+   "shown": true,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 30.0,
+   "threshold_pct": 20.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "ci",
    "id": "sim|macOS simulator build + launch",
    "kind": "job",
    "label": "Simulator CI: macOS simulator build + launch",
-   "n_now": 1,
+   "n_now": 2,
    "n_prev": 0,
-   "now": 296,
+   "now": 273.0,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -180,9 +180,9 @@
    "id": "sim|Linux simulator build + launch",
    "kind": "job",
    "label": "Simulator CI: Linux simulator build + launch",
-   "n_now": 1,
+   "n_now": 2,
    "n_prev": 0,
-   "now": 286,
+   "now": 245.5,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -243,9 +243,9 @@
    "id": "sim|Windows launcher syntax",
    "kind": "job",
    "label": "Simulator CI: Windows launcher syntax",
-   "n_now": 1,
+   "n_now": 2,
    "n_prev": 0,
-   "now": 34,
+   "now": 29.0,
    "prev7": null,
    "shown": false,
    "state": "new",
@@ -323,12 +323,6 @@
  "slowest_ci": [
   {
    "group": "ci",
-   "id": "sim|macOS tests against bundled FFmpeg and ASS",
-   "label": "Simulator CI: macOS tests against bundled FFmpeg and ASS",
-   "now": 410
-  },
-  {
-   "group": "ci",
    "id": "ci|armv7 cross-build and artifact assertions",
    "label": "CI: armv7 cross-build and artifact assertions",
    "now": 383.0
@@ -350,6 +344,12 @@
    "id": "ci|host unit tests (hostsim)",
    "label": "CI: host unit tests (hostsim)",
    "now": 350.5
+  },
+  {
+   "group": "ci",
+   "id": "sim|macOS tests against bundled FFmpeg and ASS",
+   "label": "Simulator CI: macOS tests against bundled FFmpeg and ASS",
+   "now": 273.5
   }
  ],
  "slowest_local": [],
