@@ -1,0 +1,9 @@
+{"updated":"2026-10-29T16:36:55Z",
+"ci":[
+{"id":40912049723,"at":"2026-10-29T16:29:17Z","sha":"decb0aafa","title":"CI: the globals rule names the registry readers it missed, and the forks rule reads every machine crate","pr":1134,"conclusion":"success","attempt":1,"jobs":{"which gates apply":4,"armv7 cross-build and artifact assertions":428,"host unit tests (default features)":303,"host harness tests":365,"host lint + type-checks":239,"host python/shell/C gates":199,"host unit tests (hostsim)":348,"host checks (NOT a device gate)":4,"cross-build (armv7) + artifact assertions":4}}
+],
+"sim":[],
+"nightly":[],
+"cancelled":{},
+"daily":[],
+"flaky":[]}
