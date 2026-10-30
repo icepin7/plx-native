@@ -44,12 +44,9 @@ fn the_chip_says_what_became_of_the_request() {
 fn a_row_names_its_kind_seasons_who_asked_and_when() {
     let _g = plx_base::testlock::serial();
     let show = MediaRequest { kind: MediaKind::Tv, seasons: vec![1, 2], ..request(RequestStatus::PendingApproval, Availability::Pending) };
-    let detail = TitleDetail {
-        title: Title { kind: Some(MediaKind::Tv), tmdb: 70, title: "s0000ab1e".into(), year: Some(2024),
-            poster: Some("/p.jpg".into()), ..Default::default() },
-        ..Default::default()
-    };
-    let view = row_view(&show, Some(&detail));
+    let title = Title { kind: Some(MediaKind::Tv), tmdb: 70, title: "s0000ab1e".into(), year: Some(2024),
+        poster: Some("/p.jpg".into()), ..Default::default() };
+    let view = row_view(&show, Some(&title));
     assert_eq!(view.title, "s0000ab1e");
     assert_eq!(view.lines[0], format!("{} · 2024 · {}", msg::browse_kind_tv_show(), msg::seerr_row_seasons("1, 2")));
     assert_eq!(view.lines[1], format!("{} · {}", msg::seerr_row_requested_by("s0000a1ex"), fmt::pretty_date("2026-10-28", 0)));

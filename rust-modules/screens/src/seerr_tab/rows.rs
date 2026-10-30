@@ -1,5 +1,6 @@
-//! What one request row says (docs/seerr.md), composed from the request and its title's detail:
-//! pure, so every wording is tested without a page.
+//! What one request row says (docs/seerr.md), composed from the request and its title: pure, so
+//! every wording is tested without a page, and so the page composes a row again only when one of the
+//! two changed.
 //!
 //! - the title, once its detail has landed (the request list names no title);
 //! - line 1: the kind, the year and, for a show, the seasons asked for;
@@ -9,7 +10,7 @@
 //! - the chip: what has become of it, the request's own state folded with the title's
 //!   (`registry::seerr_cards::request_chip`, which a Seerr title page says too);
 //! - the band: the download's progress.
-use plx_data::seerr::{progress, Availability, MediaKind, MediaRequest, RequestStatus, TitleDetail};
+use plx_data::seerr::{progress, Availability, MediaKind, MediaRequest, RequestStatus, Title};
 use plx_platform::i18n::msg;
 use plx_ui::fmt;
 
@@ -46,9 +47,8 @@ fn seasons(request: &MediaRequest) -> Option<String> {
     }
 }
 
-/// The row of `request`, with its title's `detail` once that has landed.
-pub fn row_view(request: &MediaRequest, detail: Option<&TitleDetail>) -> RowView {
-    let title = detail.map(|d| &d.title);
+/// The row of `request`, with its `title` once the title's detail has landed.
+pub fn row_view(request: &MediaRequest, title: Option<&Title>) -> RowView {
     let kind = match request.kind {
         MediaKind::Movie => msg::browse_kind_movie(),
         MediaKind::Tv => msg::browse_kind_tv_show(),

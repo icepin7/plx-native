@@ -11,10 +11,13 @@ use plx_data::seerr::{
 };
 use plx_data::stores::StoreJob;
 use plx_data::watchlist::WatchlistInput;
-use plx_machine::machine::{FocusRead, Host, InstanceId, MachineId, PressRead, Stamped, Tick};
+use plx_machine::machine::{FocusRead, Host, InstanceId, MachineId, PosterKey, PressRead, Stamped, Tick};
 use plx_machine::present::Present;
 use plx_ui::fixture::FixtureMeasure;
 use plx_ui::screen::ScreenArg;
+use plx_ui::tex::{Source, Warm};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -49,7 +52,7 @@ const ENTRY: EntryId = EntryId(80);
 const INSTANCE: InstanceId = InstanceId(81);
 
 fn title(kind: MediaKind, tmdb: i64, status: Availability) -> Title {
-    Title { kind: Some(kind), tmdb, title: format!("s{tmdb:08x}"), poster: Some("/p.jpg".into()), status, ..Default::default() }
+    Title { kind: Some(kind), tmdb, title: format!("s{tmdb:08x}"), poster: Some(format!("/p{tmdb}.jpg")), status, ..Default::default() }
 }
 
 fn request(id: i64, tmdb: i64, status: RequestStatus) -> MediaRequest {
@@ -203,6 +206,42 @@ fn one_request(out: &[Stamped<SeerrHost>]) -> String {
         [ContentReq::ToHome] => "home".into(),
         [] => "nothing".into(),
         more => format!("{} other requests", more.len()),
+    }
+}
+
+thread_local! {
+    /// The posters a draw on this test's thread asked for, in order.
+    static PROBED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// An art source that records each poster a draw asks for and serves none.
+struct ArtSpy;
+impl Source for ArtSpy {
+    fn probe(&self, _: u16, path: &str, _: i32, _: i32, _: bool) -> Option<PosterKey> {
+        PROBED.with(|probed| probed.borrow_mut().push(path.into()));
+        None
+    }
+    fn warm(&self, _: u16, _: &str, _: i32, _: i32, _: bool) -> Warm { Warm::Known }
+    fn logo(&self, _: u16, _: &str) -> Option<PosterKey> { None }
+    fn logo_warm(&self, _: u16, _: &str) -> Warm { Warm::Known }
+    fn unresident(&self, _: PosterKey, _: bool) {}
+    fn idle(&self) -> bool { true }
+}
+
+/// The household's server, registered for one test so the rows draw their posters through its
+/// proxy (`art_server`); the registry is emptied again however the test ends. Build the fixture
+/// after it: the search snapshot reads the registry once.
+struct HouseholdServer;
+impl HouseholdServer {
+    fn register() -> Self {
+        plx_plex::plex::reset_servers_for_test();
+        plx_plex::plex::register_for_test("seerr-art", "127.0.0.1", 9, "synthetic", "cid");
+        Self
+    }
+}
+impl Drop for HouseholdServer {
+    fn drop(&mut self) {
+        plx_plex::plex::reset_servers_for_test();
     }
 }
 
@@ -361,6 +400,88 @@ fn the_lists_next_page_is_read_as_focus_nears_its_end() {
     }
     let ids: Vec<i64> = screen.rows().map(|r| r.id).collect();
     assert_eq!(ids, (1..=12).collect::<Vec<_>>(), "every request is reachable, in the list's order");
+}
+
+/// **A frame draws only the rows on screen, however long the list** (module doc). The list holds
+/// every page read so far, and a frame that drew every row asked for every row's poster: past the
+/// 64 the texture cache holds, the posters on screen were evicted for rows nobody could see and
+/// fetched again on the next frame, so the page slowed the further down the reader went.
+#[test]
+fn a_frame_draws_only_the_rows_on_screen_however_long_the_list() {
+    let _serial = plx_base::testlock::serial();
+    let _server = HouseholdServer::register();
+    plx_ui::tex::install(&ArtSpy);
+    let script = Script { page_size: plx_plex::plex::seerr::REQUEST_PAGE as usize, ..Default::default() };
+    *script.list.lock().unwrap() = (1..=120).map(|i| request(i, 1_000 + i, RequestStatus::PendingApproval)).collect();
+    let mut fixture = Fixture::new(script);
+    let mut screen = fixture.mounted();
+    // The reader walks down the list, and each page is read as focus nears its end.
+    for _ in 0..6 {
+        let last = FocusKey { entry: ENTRY, elem: screen.row_elem(screen.rows().count() - 1).unwrap() };
+        let out = fixture.step_at(&mut screen, ScreenEvent::Tick(Tick { ms: 2_000, dt_us: 16_667 }), Some(last));
+        fixture.serve(&out);
+        fixture.settle(&mut screen);
+    }
+    assert_eq!(screen.rows().count(), 120, "six pages read");
+    assert!(art_server(&fixture.cx(None)).is_some(), "the rows draw their posters through the household's server");
+    // The reader has gone a hundred rows down.
+    let scroll = HEAD_H + 100.0 * ROW_PITCH;
+    screen.stack.restore(&plx_ui::cards::StackMemory { scroll, shelves: Vec::new() });
+    fixture.tick(&mut screen, 16);
+    let cx = fixture.cx(None);
+    PROBED.with(|probed| probed.borrow_mut().clear());
+    {
+        // A descriptive draw: the real paint, its primitives kept away from GL.
+        let _discovery = plx_ui::frame::backdrop::discover(Rc::new(RefCell::new(Default::default())));
+        let mut frame = DrawFrame::new(&cx, plx_ui::Painter::root());
+        screen.stack.view(&screen.page).paint(&mut frame);
+    }
+    let on_screen: Vec<String> = screen.rows().enumerate()
+        .filter(|(i, _)| plx_ui::on_axis(HEAD_H + *i as f32 * ROW_PITCH - scroll, plx_ui::media_row::ROW_H, SCR_H, 0.0))
+        .filter_map(|(_, row)| row.poster.clone())
+        .collect();
+    assert!((1..10).contains(&on_screen.len()), "a screenful of rows: {on_screen:?}");
+    let probed = PROBED.with(|probed| probed.borrow().clone());
+    assert_eq!(probed, on_screen, "a frame asks for the posters it shows and no others");
+}
+
+/// **A landing composes again only the rows it changed** (module doc): a row whose request and title
+/// are as they were keeps the words it has, the same strings rather than equal ones made again.
+#[test]
+fn a_refresh_composes_again_only_the_row_whose_request_changed() {
+    let _serial = plx_base::testlock::serial();
+    let script = Script::default();
+    *script.list.lock().unwrap() = (1..=6).map(|i| request(i, 100 + i, RequestStatus::PendingApproval)).collect();
+    let mut fixture = Fixture::new(script);
+    let mut screen = fixture.mounted();
+    let words = |s: &SeerrScreen| s.rows().map(|row| row.title.as_ptr()).collect::<Vec<_>>();
+    let before = words(&screen);
+    fixture.script.list.lock().unwrap()[3].status = RequestStatus::Approved;
+    let out = fixture.step(&mut screen, ScreenEvent::Uncover);
+    fixture.serve(&out);
+    fixture.settle(&mut screen);
+    assert_eq!(screen.rows().nth(3).unwrap().chip, msg::seerr_chip_approved(), "the approved request says so");
+    let after = words(&screen);
+    for (i, (was, is)) in before.iter().zip(&after).enumerate().filter(|(i, _)| *i != 3) {
+        assert_eq!(was, is, "row {i} was composed again though nothing of it changed");
+    }
+}
+
+/// A change of language composes every row again, in the new language, though the store has not
+/// moved.
+#[test]
+fn a_change_of_language_composes_every_row_again() {
+    let _serial = plx_base::testlock::serial();
+    let script = Script::default();
+    *script.list.lock().unwrap() = vec![request(1, 31, RequestStatus::PendingApproval)];
+    let mut fixture = Fixture::new(script);
+    let mut screen = fixture.mounted();
+    let english = screen.rows().next().unwrap().lines[0].clone();
+    let _pseudo = plx_platform::i18n::pseudo_on_this_thread_for_test();
+    fixture.tick(&mut screen, 16);
+    let line = &screen.rows().next().unwrap().lines[0];
+    assert_ne!(line, &english);
+    assert_eq!(line, msg::browse_kind_movie(), "the kind, in the language now on");
 }
 
 #[test]

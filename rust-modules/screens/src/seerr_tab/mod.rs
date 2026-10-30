@@ -23,6 +23,14 @@
 //! row the server puts before it), so a refresh never moves the row under the reader's focus
 //! because the server re-sorted the list.
 //!
+//! **A long list costs a frame what a short one does.** The list holds every page read so far, so
+//! a frame spends on a row only its section's bookkeeping. A row off the screen is not drawn: a
+//! drawn row asks for its poster, and drawing every row asked for more posters than the texture
+//! cache holds, so the ones on screen were evicted and fetched again on every frame. A tick reads
+//! the store again only when it changed (`SeerrStore::gen`, the page's `Stamp`), and then composes a
+//! row's words again only when its request or its title did (`Page::compose`). A row whose words
+//! alone changed is drawn again; only rows that come or go lay the page out again.
+//!
 //! **Routing.** A screen names no sibling: a card or row press is a push of
 //! `ContentArg::SeerrTitle`; the strip's pills and chip are `ContentReq::Tab` / `ContentReq::Account`,
 //! and BACK from the top of the page is `ContentReq::ToHome`, which the application performs as the
@@ -31,10 +39,10 @@ pub mod discover;
 pub mod header;
 pub mod rows;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 
-use plx_data::seerr::{DiscoverRow, MediaKind, SeerrData, SeerrOp};
+use plx_data::seerr::{DiscoverRow, MediaKind, MediaRequest, SeerrData, SeerrOp, Title};
 use plx_data::stores::seerr::{Answer, SeerrCmd, SeerrStore, Slot};
 use plx_data::stores::{StoreCmd, StoreId};
 use plx_machine::machine::{
@@ -127,11 +135,31 @@ enum Ident {
     Card(DiscoverRow, MediaKind, i64),
 }
 
-/// One request row on view.
-#[derive(Clone, Debug, PartialEq)]
+/// One request row on view, and what its words were composed of.
+#[derive(Clone, Debug)]
 struct ListRow {
     elem: u32,
     view: RowView,
+    /// The request and its title (once its detail has landed) the view was composed of: a sync
+    /// composes the words again only when one of them changed ([`Page::compose`]).
+    request: MediaRequest,
+    title: Option<Title>,
+}
+
+/// What a sync reads besides what the store holds: the store's generation (every change to what it
+/// holds moves it, `SeerrStore::gen`), the UI language the words are composed in, the section and
+/// the "Available" control. A tick whose stamp is the last one's has nothing to bring up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Stamp {
+    gen: Option<u32>,
+    locale: usize,
+    section: Section,
+    show_available: bool,
+}
+
+/// The UI language's identity: it moves when the language does.
+fn locale() -> usize {
+    std::ptr::from_ref(plx_platform::i18n::current()) as usize
 }
 
 /// One shelf's cards and their elements, and how far through the server's pages it has read.
@@ -150,6 +178,10 @@ struct Page {
     show_available: bool,
     sees_all: bool,
     list: Vec<ListRow>,
+    /// Where each request row's element stands in [`Page::list`].
+    at: HashMap<u32, usize>,
+    /// A request row is still on its way ([`RowView::moving`]): the page polls the list.
+    moving: bool,
     shelves: [Shelf; discover::ROWS.len()],
     keys: HashMap<Ident, u32>,
     next: u32,
@@ -157,6 +189,8 @@ struct Page {
     content: Vec<GroupId>,
     fill: Fill,
     rev: u64,
+    /// What the last [`Page::sync`] read; `None` before the first.
+    synced: Option<Stamp>,
     /// The header row's motion (the shared `PageHeader` motion, held by the page that wears it).
     header_capsules: TabStrip,
     header_pop: CtlPop<1>,
@@ -171,12 +205,15 @@ impl Page {
             show_available: false,
             sees_all: false,
             list: Vec::new(),
+            at: HashMap::new(),
+            moving: false,
             shelves: Default::default(),
             keys: HashMap::new(),
             next: FIRST_ELEM,
             content: Vec::new(),
             fill: Fill::Loading,
             rev: 0,
+            synced: None,
             header_capsules: TabStrip::new(),
             header_pop: CtlPop::new(),
             header_rows: SharedRow::new(),
@@ -197,7 +234,7 @@ impl Page {
     fn header_row(&self, measure: &dyn plx_machine::machine::Measure) -> std::rc::Rc<header::Row> {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        (std::ptr::from_ref(plx_platform::i18n::current()) as usize).hash(&mut h);
+        locale().hash(&mut h);
         (self.section, self.show_available, self.sees_all).hash(&mut h);
         self.header_rows.get(h.finish(), || header::Row::new(measure, self.section, self.show_available, self.sees_all))
     }
@@ -211,11 +248,25 @@ impl Page {
         }
     }
 
-    /// Bring the list and the shelves up to the store. Answers whether anything the stack reads moved.
+    /// What a sync of `seerr` reads now.
+    fn stamp(&self, seerr: Option<&SeerrStore>) -> Stamp {
+        Stamp { gen: seerr.map(SeerrStore::gen), locale: locale(), section: self.section, show_available: self.show_available }
+    }
+
+    /// Bring the list and the shelves up to the store. Answers whether anything drawn moved; only
+    /// what the stack reads (rows come or gone, a shelf, the read-out) lays the page out again.
     fn sync(&mut self, seerr: Option<&SeerrStore>) -> bool {
-        let mut changed = false;
+        let stamp = self.stamp(seerr);
+        if self.synced == Some(stamp) {
+            return false;
+        }
+        let relocale = self.synced.is_some_and(|synced| synced.locale != stamp.locale);
+        self.synced = Some(stamp);
+        let (mut words, mut layout) = (false, false);
         if let Some(seerr) = seerr {
-            changed |= self.sync_list(seerr);
+            let (changed, moved) = self.sync_list(seerr, relocale);
+            words |= changed;
+            layout |= moved;
             for (ordinal, row) in discover::ROWS.into_iter().enumerate() {
                 let discover::Row { cards, read, more } = discover::row(seerr, row, self.show_available);
                 let shelf = &self.shelves[ordinal];
@@ -224,64 +275,90 @@ impl Page {
                 }
                 let elems = cards.iter().map(|c| self.intern(Ident::Card(row, c.kind, c.tmdb))).collect();
                 self.shelves[ordinal] = Shelf { cards, elems, read, more };
-                changed = true;
+                layout = true;
             }
             if seerr.sees_all_requests() != self.sees_all {
                 self.sees_all = seerr.sees_all_requests();
-                changed = true;
+                layout = true;
             }
         }
         let fill = self.fill_of(seerr);
-        changed |= fill != self.fill;
+        layout |= fill != self.fill;
         self.fill = fill;
-        if changed {
+        if layout {
             self.relayout();
         }
-        changed
+        words || layout
     }
 
     /// The list's rows: in the order the page first showed them, a request new to the page at the
-    /// top, one that left the list gone (module doc).
-    fn sync_list(&mut self, seerr: &SeerrStore) -> bool {
-        let pages = request_pages(seerr);
-        if pages.read == 0 {
-            return false;
+    /// top, one that left the list gone (module doc). Answers whether a row changed, and whether
+    /// rows came or went (a row's new words alone move no section).
+    fn sync_list(&mut self, seerr: &SeerrStore, relocale: bool) -> (bool, bool) {
+        if request_pages(seerr).read == 0 {
+            return (false, false);
         }
-        let mut views: Vec<RowView> = Vec::new();
-        for r in requests(seerr) {
-            if !views.iter().any(|v| v.id == r.id) {
-                views.push(rows::row_view(r, seerr.title_detail(r.kind, r.tmdb)));
-            }
-        }
+        let mut ids = HashSet::new();
+        let incoming: Vec<&MediaRequest> = requests(seerr).filter(|r| ids.insert(r.id)).collect();
         // A row new to the page stands after the shown row the server puts just before it, or on
         // top when the server puts it before every shown one (a new request); a shown row keeps
         // its place and its element.
-        let shown = |id: i64| self.list.iter().any(|row| row.view.id == id);
-        let (mut top, mut after): (Vec<RowView>, HashMap<i64, Vec<RowView>>) = (Vec::new(), HashMap::new());
+        let shown: HashSet<i64> = self.list.iter().map(|row| row.request.id).collect();
+        let (mut top, mut after): (Vec<&MediaRequest>, HashMap<i64, Vec<&MediaRequest>>) = (Vec::new(), HashMap::new());
         let mut before: Option<i64> = None;
-        for view in &views {
+        for &request in &incoming {
             match before {
-                _ if shown(view.id) => before = Some(view.id),
-                None => top.push(view.clone()),
-                Some(id) => after.entry(id).or_default().push(view.clone()),
+                _ if shown.contains(&request.id) => before = Some(request.id),
+                None => top.push(request),
+                Some(id) => after.entry(id).or_default().push(request),
             }
         }
-        let mut list: Vec<ListRow> = top.into_iter().map(|view| ListRow { elem: 0, view }).collect();
-        for row in &self.list {
-            let Some(view) = views.iter().find(|v| v.id == row.view.id) else { continue };
-            list.push(ListRow { elem: row.elem, view: view.clone() });
-            list.extend(after.remove(&row.view.id).into_iter().flatten().map(|view| ListRow { elem: 0, view }));
+        let by_id: HashMap<i64, &MediaRequest> = incoming.iter().map(|r| (r.id, *r)).collect();
+        let mut moved = !top.is_empty() || !after.is_empty();
+        let mut changed = moved;
+        let old = std::mem::take(&mut self.list);
+        let mut list = Vec::with_capacity(incoming.len());
+        for request in top {
+            list.push(self.compose(None, request, seerr, relocale).0);
         }
-        for row in &mut list {
-            if row.elem == 0 {
-                row.elem = self.intern(Ident::Request(row.view.id));
+        for row in old {
+            let Some(request) = by_id.get(&row.request.id).copied() else {
+                moved = true;
+                changed = true;
+                continue;
+            };
+            let (row, recomposed) = self.compose(Some(row), request, seerr, relocale);
+            changed |= recomposed;
+            list.push(row);
+            for request in after.remove(&request.id).into_iter().flatten() {
+                list.push(self.compose(None, request, seerr, relocale).0);
             }
-        }
-        if list == self.list {
-            return false;
         }
         self.list = list;
-        true
+        if moved {
+            self.at = self.list.iter().enumerate().map(|(i, row)| (row.elem, i)).collect();
+        }
+        if changed {
+            self.moving = self.list.iter().any(|row| row.view.moving);
+        }
+        (changed, moved)
+    }
+
+    /// `row` brought up to `request` and its title as the store holds them, or (`None`) the row of a
+    /// request new to the page. Its words are composed again only when what they are made of changed,
+    /// or the language did. Answers whether the words it shows changed.
+    fn compose(&mut self, row: Option<ListRow>, request: &MediaRequest, seerr: &SeerrStore, relocale: bool)
+        -> (ListRow, bool)
+    {
+        let title = seerr.title_detail(request.kind, request.tmdb).map(|detail| &detail.title);
+        let row = match row {
+            Some(row) if !relocale && row.request == *request && row.title.as_ref() == title => return (row, false),
+            row => row,
+        };
+        let elem = row.as_ref().map_or_else(|| self.intern(Ident::Request(request.id)), |row| row.elem);
+        let view = rows::row_view(request, title);
+        let changed = row.is_none_or(|row| row.view != view);
+        (ListRow { elem, view, request: request.clone(), title: title.cloned() }, changed)
     }
 
     fn relayout(&mut self) {
@@ -330,7 +407,7 @@ impl Page {
     }
 
     fn row_of(&self, elem: u32) -> Option<&ListRow> {
-        self.list.iter().find(|row| row.elem == elem)
+        self.at.get(&elem).and_then(|&i| self.list.get(i))
     }
 
     /// The card `elem` stands for.
@@ -539,6 +616,11 @@ impl<H: SearchLike> StackPage<H> for Page {
                 self.header_row(f.measure).draw(p.alpha(clear), r.y, &self.header_capsules, pop);
             }
             Sec::Request(elem) => {
+                // A row off the screen is not drawn (module doc): its draw would ask for its poster.
+                let rect = Rect::new(ROW_X, r.y, ROW_W, plx_ui::media_row::ROW_H);
+                if !plx_ui::on_axis(rect.y, rect.h, SCR_H, 0.0) {
+                    return;
+                }
                 let Some(row) = self.row_of(elem) else { return };
                 let focused = f.cx.focus.current == Some(FocusKey { entry: self.entry, elem });
                 let server = art_server(f.cx);
@@ -551,7 +633,7 @@ impl<H: SearchLike> StackPage<H> for Page {
                     poster: view.poster.as_deref().zip(server).map(|(url, server)| Poster { server, url }),
                     focused,
                 }
-                .draw(p, Rect::new(ROW_X, r.y, ROW_W, plx_ui::media_row::ROW_H), f.measure);
+                .draw(p, rect, f.measure);
             }
             Sec::Status => {
                 let Some(text) = self.read_out() else { return };
@@ -572,6 +654,9 @@ pub struct SeerrScreen {
     stack: Stack<Sec>,
     /// The titles this page has asked for (each request's, read by its own `Detail`).
     titles_asked: Vec<(MediaKind, i64)>,
+    /// What the page last asked the store from (the titles and Discover's fill pages): a tick whose
+    /// [`Stamp`] is this one has nothing new to ask. `None` before the first and after an uncover.
+    asked_from: Option<Stamp>,
     /// When the list was last asked, by the page's `Tick` clock; `None` before the first tick.
     asked_at: Option<u32>,
     /// A surface or a pushed page stands over this one: it does not poll.
@@ -598,6 +683,7 @@ impl SeerrScreen {
             page: Page::new(entry),
             stack: Stack::new(entry).reveal_on_move(true).clipped(Rect::new(0.0, floor, SCR_W, SCR_H - floor)),
             titles_asked: Vec::new(),
+            asked_from: None,
             asked_at: None,
             covered: false,
             seat: None,
@@ -669,18 +755,24 @@ impl SeerrScreen {
     fn sync<H: SearchLike>(&mut self, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) {
         let seerr = H::seerr(cx);
         if let Some(seerr) = seerr {
-            for r in requests(seerr) {
-                let id = (r.kind, r.tmdb);
-                if self.titles_asked.contains(&id) || seerr.asked(&Slot::Detail(r.kind, r.tmdb)).is_some() {
-                    continue;
+            // Only a store that moved can lack what was not lacking (module doc).
+            let stamp = self.page.stamp(Some(seerr));
+            let fresh = self.asked_from != Some(stamp);
+            self.asked_from = Some(stamp);
+            if fresh {
+                for r in requests(seerr) {
+                    let id = (r.kind, r.tmdb);
+                    if seerr.asked(&Slot::Detail(r.kind, r.tmdb)).is_some() || self.titles_asked.contains(&id) {
+                        continue;
+                    }
+                    self.titles_asked.push(id);
+                    Self::ask(Slot::Detail(r.kind, r.tmdb), SeerrOp::Detail { kind: r.kind, tmdb: r.tmdb }, fx);
                 }
-                self.titles_asked.push(id);
-                Self::ask(Slot::Detail(r.kind, r.tmdb), SeerrOp::Detail { kind: r.kind, tmdb: r.tmdb }, fx);
             }
             // The list's next page, once focus walks near its end: every request stays reachable.
             let pages = request_pages(seerr);
             let at = cx.focus.current.filter(|key| key.entry == self.page.entry)
-                .and_then(|key| self.page.list.iter().position(|row| row.elem == key.elem));
+                .and_then(|key| self.page.at.get(&key.elem).copied());
             let near_end = at.is_some_and(|i| i + NEAR_END >= self.page.list.len());
             if self.page.section == Section::Requests && pages.more && near_end
                 && seerr.asked(&Slot::Requests(pages.read + 1)).is_none()
@@ -688,7 +780,7 @@ impl SeerrScreen {
                 let page = pages.read + 1;
                 Self::ask(Slot::Requests(page), SeerrOp::Requests { page }, fx);
             }
-            if self.page.section == Section::Discover {
+            if fresh && self.page.section == Section::Discover {
                 for row in discover::ROWS {
                     if let Some(page) = discover::row(seerr, row, self.page.show_available).fill_page() {
                         Self::ask_page(seerr, row, page, fx);
@@ -702,7 +794,7 @@ impl SeerrScreen {
         }
         let ms = cx.tick.ms;
         let due = self.asked_at.is_none_or(|at| ms.wrapping_sub(at) >= REFRESH_MS);
-        if !self.covered && self.page.section == Section::Requests && due && self.page.list.iter().any(|row| row.view.moving) {
+        if !self.covered && self.page.section == Section::Requests && due && self.page.moving {
             self.refresh(cx, fx);
         }
         if self.asked_at.is_none() {
@@ -941,6 +1033,7 @@ impl<H: SearchLike> Machine<H> for SeerrScreen {
                 self.covered = false;
                 self.refresh(cx, fx);
                 self.titles_asked.clear();
+                self.asked_from = None;
                 fx.invalidate(Provenance::Nav);
                 Handled::Yes
             }

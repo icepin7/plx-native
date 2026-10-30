@@ -73,8 +73,9 @@ other switches in place. The page opens on Requests.
   left", with the amber band along the poster's foot) or who approved or declined it, and a chip for
   what became of it (Pending, Approved, Declined, Failed, Downloading, Processing, Partly available,
   Available). A row is a section of its own, so the page scrolls to the focused row as it does to a
-  shelf. OK on a row opens the title's Seerr page, where a request manager approves or declines it
-  (below).
+  shelf. Only the rows on screen are drawn, and a row's words are composed again only when its
+  request or its title changed, so a long list costs a frame what a short one does. OK on a row
+  opens the title's Seerr page, where a request manager approves or declines it (below).
 - The list is read again when the page is uncovered or Requests is chosen, and every 30 s
   (`REFRESH_MS`) while a request on view is approved and not yet available; a refresh
   (`SeerrCmd::Refresh`) keeps the rows on screen until it lands. Rows keep their order while the
