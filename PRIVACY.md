@@ -25,11 +25,15 @@ and its operator. PlxNative’s developer does not receive them.
 
 If you enter the address of a Seerr, Overseerr or Jellyseerr server under Settings → Services →
 Seerr, PlxNative communicates directly with that server, which you or your household run. To sign
-in there it sends the server the Plex account token of the profile that is watching (the server
-checks it with Plex and answers with a session); afterwards it sends your searches, the titles you
-open and the requests you make. The address is stored on this television; the session is kept only
-in memory. Nothing is sent to a Seerr server unless you enter its address, and PlxNative's developer
-does not receive any of it.
+in there it sends the server either the Plex account token of the profile that is watching (the
+server checks it with Plex and answers with a session), or, if that profile chose to sign in with a
+Seerr account, the email address and password you type for it; afterwards it sends your searches,
+the titles you open and the requests you make. The address is stored on this television. A Plex
+sign-in's session is kept only in memory. For a Seerr account, the email address and the session
+the server hands back are stored on this television for that profile, so the app stays signed in
+after a restart, and are removed when you sign out; the password is never stored. Nothing is sent
+to a Seerr server unless you enter its address, and PlxNative's developer does not receive any of
+it.
 
 ## Data stored on this television
 
