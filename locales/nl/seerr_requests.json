@@ -1,0 +1,22 @@
+{
+  "search.request.heading": "Aanvragen via Seerr",
+  "seerr.title.request": "Aanvragen",
+  "seerr.title.request_seasons": "Ontbrekende seizoenen aanvragen",
+  "seerr.title.requesting": "Aanvragen…",
+  "seerr.status.pending": "Aangevraagd, wacht op goedkeuring",
+  "seerr.status.processing": "Aangevraagd, onderweg",
+  "seerr.status.partly": "Deels op je server",
+  "seerr.status.available": "Op je server",
+  "seerr.status.blocked": "Kan niet worden aangevraagd",
+  "seerr.request.done": "Aangevraagd",
+  "seerr.request.already": "Al aangevraagd",
+  "seerr.request.forbidden": "Je kunt dit niet aanvragen op de server",
+  "seerr.request.failed": "Aanvragen mislukt. Probeer het opnieuw.",
+  "seerr.title.unreachable": "Kan Seerr niet bereiken.",
+  "seerr.menu.server": "Server",
+  "seerr.menu.quality": "Kwaliteit",
+  "seerr.menu.folder": "Map",
+  "seerr.menu.free": "{size} vrij",
+  "seerr.menu.loading": "Laden…",
+  "seerr.menu.unavailable": "Kan de keuzes niet laden"
+}
