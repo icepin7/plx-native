@@ -252,6 +252,7 @@ fn a_detail_reads_its_facts_its_downloads_and_its_requests() {
     assert_eq!(detail.facts, TitleFacts {
         rating: Some(8.2), runtime_min: Some(166), genres: vec!["Science Fiction".into(), "Adventure".into()],
         released: Some("2024-03-01".into()), studio: Some("Studio A".into()), tmdb_status: Some("Released".into()),
+        ..Default::default()
     });
     assert_eq!(detail.downloads.len(), 1);
     assert_eq!(detail.downloads[0].state, DownloadState::Paused);
@@ -267,6 +268,101 @@ fn a_detail_reads_its_facts_its_downloads_and_its_requests() {
     let facts = got.unwrap().facts;
     assert_eq!((facts.runtime_min, facts.studio.as_deref(), facts.released.as_deref(), facts.rating),
         (Some(45), Some("Net"), Some("2020-05-05"), None), "nobody voted: no rating");
+}
+
+#[test]
+fn a_detail_reads_its_cast_crew_videos_age_ratings_and_streaming_services() {
+    let movie = r#"{"id":61,"title":"M","tagline":"One line.","originalLanguage":"en","budget":165000000,
+        "revenue":0,"collection":{"id":9,"name":"The M Collection"},
+        "credits":{
+          "cast":[{"id":3,"name":"Third","character":"C","order":2},
+                  {"id":1,"name":"First","character":"A","order":0,"profilePath":"/a.jpg"},
+                  {"id":2,"name":"Second","order":1},
+                  {"name":"No id","order":3}],
+          "crew":[{"name":"Dee","job":"Director"},{"name":"Wren","job":"Screenplay"},
+                  {"name":"Dee","job":"Writer"},{"name":"Dee","job":"Director"},{"name":"Ed","job":"Editor"}]},
+        "relatedVideos":[{"site":"YouTube","key":"clip1","name":"Clip","type":"Clip"},
+                         {"site":"Vimeo","key":"v1","name":"Elsewhere","type":"Trailer"},
+                         {"site":"YouTube","key":"tease","name":"Teaser","type":"Teaser"},
+                         {"site":"YouTube","key":"trail-1_A","name":"Official Trailer","type":"Trailer"},
+                         {"site":"YouTube","key":"bad key","name":"Odd","type":"Trailer"}],
+        "releases":{"results":[{"iso_3166_1":"NL","release_dates":[{"certification":"","type":3},
+                                                                  {"certification":"12","type":4}]},
+                               {"iso_3166_1":"US","release_dates":[{"certification":"PG-13","type":3}]},
+                               {"iso_3166_1":"FR","release_dates":[{"certification":""}]}]},
+        "watchProviders":[{"iso_3166_1":"NL","flatrate":[{"name":"Stream A"},{"name":"Stream B"}],
+                           "buy":[{"name":"Shop"}]},
+                          {"iso_3166_1":"US","buy":[{"name":"Shop"}]}]}"#;
+    let (got, _) = run(vec![ok(movie)], |c, t| c.detail(&session(), MediaKind::Movie, 61, t));
+    let detail = got.unwrap();
+    assert_eq!(detail.tagline.as_deref(), Some("One line."));
+    let cast: Vec<_> = detail.cast.iter().map(|c| (c.id, c.name.as_str(), c.character.as_str(), c.profile.as_deref())).collect();
+    assert_eq!(cast, [(1, "First", "A", Some("/a.jpg")), (2, "Second", "", None), (3, "Third", "C", None)],
+        "billing order, every member with an id");
+    assert_eq!(detail.crew, Crew { directors: vec!["Dee".into()], writers: vec!["Wren".into(), "Dee".into()],
+        creators: Vec::new() });
+    let videos: Vec<_> = detail.videos.iter().map(|v| (v.key.as_str(), v.kind)).collect();
+    assert_eq!(videos, [("trail-1_A", VideoKind::Trailer), ("tease", VideoKind::Teaser), ("clip1", VideoKind::Other)],
+        "YouTube only, a key YouTube could serve, trailers first");
+    assert_eq!(detail.trailer().map(|v| v.key.as_str()), Some("trail-1_A"));
+    assert_eq!(detail.certification("NL"), Some("12"), "the country's first certification that says one");
+    assert_eq!(detail.certification("FR"), Some("PG-13"), "none for the country: the United States'");
+    assert_eq!(detail.providers_in("nl"), ["Stream A", "Stream B"]);
+    assert!(detail.providers_in("US").is_empty(), "buying is not streaming");
+    let f = &detail.facts;
+    assert_eq!((f.original_language.as_deref(), f.budget, f.revenue, f.collection.as_deref()),
+        (Some("en"), Some(165_000_000), None, Some("The M Collection")), "TMDB's 0 is no figure");
+
+    let show = r#"{"id":62,"name":"S","numberOfSeasons":3,"numberOfEpisodes":30,
+        "createdBy":[{"name":"Cora"},{"name":"Cy"}],
+        "contentRatings":{"results":[{"iso_3166_1":"US","rating":"TV-MA"}]},"seasons":[]}"#;
+    let (got, _) = run(vec![ok(show)], |c, t| c.detail(&session(), MediaKind::Tv, 62, t));
+    let detail = got.unwrap();
+    assert_eq!(detail.crew.creators, ["Cora", "Cy"]);
+    assert_eq!(detail.certification("DE"), Some("TV-MA"));
+    assert_eq!((detail.facts.season_count, detail.facts.episode_count), (Some(3), Some(30)));
+    assert!(detail.trailer().is_none());
+}
+
+#[test]
+fn a_movies_ratings_come_combined_and_fall_back_to_rotten_tomatoes_alone() {
+    let combined = r#"{"rt":{"criticsScore":94,"criticsRating":"Certified Fresh","audienceScore":88,
+        "audienceRating":"Upright"},"imdb":{"criticsScore":8.1}}"#;
+    let (got, seen) = run(vec![ok(combined)], |c, t| c.ratings(&session(), MediaKind::Movie, 61, t));
+    assert_eq!(got.unwrap(), TitleRatings { critics: Some((94, CriticsVerdict::Certified)),
+        audience: Some((88, AudienceVerdict::Upright)), imdb: Some(8.1) });
+    assert_eq!(seen[0].url, format!("{BASE}/api/v1/movie/61/ratingscombined"));
+
+    let rt = r#"{"criticsScore":12,"criticsRating":"Rotten","audienceScore":40,"audienceRating":"Spilled"}"#;
+    let (got, seen) = run(vec![status(404), ok(rt)], |c, t| c.ratings(&session(), MediaKind::Movie, 61, t));
+    assert_eq!(got.unwrap(), TitleRatings { critics: Some((12, CriticsVerdict::Rotten)),
+        audience: Some((40, AudienceVerdict::Spilled)), imdb: None }, "a server before ratingscombined");
+    assert_eq!(seen[1].url, format!("{BASE}/api/v1/movie/61/ratings"));
+
+    let (got, _) = run(vec![status(404), status(404)], |c, t| c.ratings(&session(), MediaKind::Movie, 61, t));
+    assert_eq!(got.unwrap(), TitleRatings::default(), "no service matched it: no scores, not a failure");
+    let (got, _) = run(vec![status(500)], |c, t| c.ratings(&session(), MediaKind::Movie, 61, t));
+    assert_eq!(got, Err(SeerrError::Other(500)));
+
+    let odd = r#"{"rt":{"criticsScore":-1,"criticsRating":"Fresh","audienceScore":70,"audienceRating":"?"}}"#;
+    let (got, _) = run(vec![ok(odd)], |c, t| c.ratings(&session(), MediaKind::Movie, 61, t));
+    assert_eq!(got.unwrap(), TitleRatings::default(), "a score with no verdict, or out of range, is none");
+}
+
+#[test]
+fn a_shows_ratings_are_rotten_tomatoes_and_recommendations_page_by_kind() {
+    let rt = r#"{"criticsScore":91,"criticsRating":"Fresh"}"#;
+    let (got, seen) = run(vec![ok(rt)], |c, t| c.ratings(&session(), MediaKind::Tv, 62, t));
+    assert_eq!(got.unwrap().critics, Some((91, CriticsVerdict::Fresh)));
+    assert_eq!(seen.iter().map(|r| r.url.as_str()).collect::<Vec<_>>(), [format!("{BASE}/api/v1/tv/62/ratings")]);
+
+    let page = r#"{"page":2,"totalPages":4,"results":[{"id":70,"title":"Like M"},{"id":71,"mediaType":"person"}]}"#;
+    let (got, seen) = run(vec![ok(page)], |c, t| c.recommendations(&session(), MediaKind::Movie, 61, 2, t));
+    let got = got.unwrap();
+    assert_eq!(seen[0].url, format!("{BASE}/api/v1/movie/61/recommendations?page=2"));
+    assert_eq!((got.page, got.pages), (2, 4));
+    assert_eq!(got.items.iter().map(|t| (t.tmdb, t.kind)).collect::<Vec<_>>(), [(70, Some(MediaKind::Movie))],
+        "a row with no kind takes the title's; a person is left out");
 }
 
 #[test]

@@ -17,7 +17,8 @@ use plx_plex::plex::seerr::{live_transport, SeerrClient};
 pub use plx_plex::plex::seerr::{
     default_server, progress, ArrOptions, ArrServer, Availability, Decision, DiscoverRow, Download, DownloadState,
     MediaKind, MediaRequest, Page, Progress, QualityProfile, RequestOptions, RequestStatus, RootFolder, Season,
-    SeerrError, SeerrSession, SeerrUser, Title, TitleDetail, TitleFacts,
+    SeerrError, SeerrSession, SeerrUser, Title, TitleDetail, TitleFacts, CastMember, Crew, Video, VideoKind,
+    TitleRatings, CriticsVerdict, AudienceVerdict,
 };
 
 /// How a job signs in when it must (docs/seerr.md, "Sign-in and the session").
@@ -50,6 +51,10 @@ pub enum SeerrOp {
     Search { query: String, page: u32 },
     Discover { row: DiscoverRow, page: u32 },
     Detail { kind: MediaKind, tmdb: i64 },
+    /// A title's Rotten Tomatoes and IMDb scores.
+    Ratings { kind: MediaKind, tmdb: i64 },
+    /// One page of the titles TMDB recommends with a title.
+    Recommendations { kind: MediaKind, tmdb: i64, page: u32 },
     /// The request list: everybody's for a user who may see them, else the user's own.
     Requests { page: u32 },
     /// The Radarr (a movie) or Sonarr (a show) servers a request can go to.
@@ -69,6 +74,7 @@ pub enum SeerrData {
     Connected,
     Titles(Page<Title>),
     Detail(TitleDetail),
+    Ratings(TitleRatings),
     Requests(Page<MediaRequest>),
     Servers(Vec<ArrServer>),
     ServerOptions(ArrOptions),
@@ -107,6 +113,9 @@ impl SeerrIo for LiveSeerrIo {
             SeerrOp::Search { query, page } => client.search(session, query, *page, &mut t).map(SeerrData::Titles),
             SeerrOp::Discover { row, page } => client.discover(session, *row, *page, &mut t).map(SeerrData::Titles),
             SeerrOp::Detail { kind, tmdb } => client.detail(session, *kind, *tmdb, &mut t).map(SeerrData::Detail),
+            SeerrOp::Ratings { kind, tmdb } => client.ratings(session, *kind, *tmdb, &mut t).map(SeerrData::Ratings),
+            SeerrOp::Recommendations { kind, tmdb, page } =>
+                client.recommendations(session, *kind, *tmdb, *page, &mut t).map(SeerrData::Titles),
             SeerrOp::Requests { page } => client.requests(session, *page, &mut t).map(SeerrData::Requests),
             SeerrOp::Servers { kind } => client.servers(session, *kind, &mut t).map(SeerrData::Servers),
             SeerrOp::ServerOptions { kind, server } =>

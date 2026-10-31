@@ -158,6 +158,20 @@ Until they land, or if they cannot be read, the menu says so in a note and Reque
 - `GET /api/v1/movie|tv/{id}` also carries TMDB's `voteAverage`, `genres`, `status`, a movie's
   `runtime` and `productionCompanies`, a show's `episodeRunTime` and `networks`, and in `mediaInfo`
   the title's `downloadStatus` and its `requests`, each with its users and dates.
+- The same detail record (Overseerr's `MovieDetails` / `TvDetails`) carries what a title's page
+  shows past its facts: `tagline`, `originalLanguage`, a movie's `budget` and `revenue` (0 when TMDB
+  has none) and `collection.name`, a show's `numberOfSeasons`, `numberOfEpisodes` and `createdBy`;
+  `credits.cast` (`name`, `character`, `order`, `profilePath`) and `credits.crew` (`job`: Director,
+  Screenplay, Writer, Story, Teleplay); `relatedVideos` (`site` YouTube, `key`, `type` Trailer,
+  Teaser, Clip, …); age ratings in a movie's `releases.results[].release_dates[].certification` and a
+  show's `contentRatings.results[].rating`, by `iso_3166_1`; and `watchProviders[]` by `iso_3166_1`,
+  whose `flatrate` are the streaming services.
+- `GET /api/v1/movie/{id}/ratingscombined`: `{rt?, imdb?}`, Rotten Tomatoes (`criticsScore`,
+  `criticsRating` Certified Fresh / Fresh / Rotten, `audienceScore`, `audienceRating` Upright /
+  Spilled) and IMDb (`criticsScore`, out of 10). A server that predates it answers 404, and the
+  client asks `/api/v1/movie/{id}/ratings`, the Rotten Tomatoes record alone; a show has only
+  `/api/v1/tv/{id}/ratings`. A 404 there is a title neither service matched: no scores, not a failure.
+- `GET /api/v1/movie|tv/{id}/recommendations?page`: a list page of titles of the same kind.
 - `POST /api/v1/request/{id}/approve|decline`: Manage Requests only (403 otherwise); a request that
   is no longer pending answers 409; 200 is the request as it now is.
 - `POST /api/v1/request {mediaType, mediaId, seasons?, serverId?, profileId?, rootFolder?}`: 201;

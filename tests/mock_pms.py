@@ -2557,7 +2557,48 @@ class SeerrFixture:
             out.update({"episodeRunTime": [f["runtime"] // 2], "networks": [{"id": 1, "name": f["studio"]}],
                         "numberOfSeasons": len(t["seasons"]),
                         "seasons": [{"seasonNumber": n, "episodeCount": 8} for n in t["seasons"]]})
+        out.update(self.extras(t))
         return out
+
+    def extras(self, t):
+        """What a title's page shows past its facts: tagline, language, money, collection, credits,
+        videos, age ratings and streaming services (Overseerr's `MovieDetails` / `TvDetails`)."""
+        rng = random.Random(t["id"])
+        cast = [{"id": 9300000 + n, "castId": n, "creditId": f"c{n}", "name": swords(rng, 2),
+                 "character": swords(rng, 2), "order": n, "profilePath": None} for n in range(14)]
+        crew = [{"id": 9400001, "creditId": "d1", "department": "Directing", "job": "Director", "name": swords(rng, 2)},
+                {"id": 9400002, "creditId": "w1", "department": "Writing", "job": "Screenplay", "name": swords(rng, 2)}]
+        out = {"tagline": swords(rng, 5), "originalLanguage": "en", "credits": {"cast": cast, "crew": crew},
+               "relatedVideos": [{"site": "YouTube", "key": "mockTeaser01", "name": "Teaser", "type": "Teaser",
+                                  "size": 1080, "url": "https://www.youtube.com/watch?v=mockTeaser01"},
+                                 {"site": "YouTube", "key": "mockTrailer1", "name": "Official Trailer",
+                                  "type": "Trailer", "size": 1080,
+                                  "url": "https://www.youtube.com/watch?v=mockTrailer1"}],
+               "watchProviders": [{"iso_3166_1": region, "flatrate": [{"id": 8, "name": "s5eeb0301"}]}
+                                  for region in ("US", "NL", "DE")]}
+        if t["kind"] == "movie":
+            out.update({"budget": 40_000_000 + t["id"] % 7 * 10_000_000, "revenue": 0 if t["id"] % 2 else 250_000_000,
+                        "collection": {"id": 1, "name": swords(rng, 2)},
+                        "releases": {"results": [{"iso_3166_1": "US",
+                                                  "release_dates": [{"certification": "PG-13", "type": 3}]}]}})
+        else:
+            out.update({"numberOfEpisodes": 8 * len(t["seasons"]),
+                        "createdBy": [{"id": 9400003, "name": swords(rng, 2)}],
+                        "contentRatings": {"results": [{"iso_3166_1": "US", "rating": "TV-14"}]}})
+        return out
+
+    def ratings(self, t):
+        """Rotten Tomatoes and IMDb for every third title but one: the rest have none (Seerr's 404)."""
+        n = self.titles.index(t)
+        if n % 3 == 2:
+            return None
+        rt = {"title": t["name"], "url": "https://www.rottentomatoes.com/m/synthetic",
+              "criticsScore": 55 + n * 3, "criticsRating": "Certified Fresh" if n == 0 else
+              ("Fresh" if 55 + n * 3 >= 60 else "Rotten"),
+              "audienceScore": 70 + n, "audienceRating": "Upright" if n % 2 == 0 else "Spilled"}
+        imdb = {"title": t["name"], "url": "https://www.imdb.com/title/tt0000000/",
+                "criticsScore": round(6.0 + n * 0.2, 1)}
+        return {"rt": rt, "imdb": imdb}
 
     def row(self, t):
         row = {"id": t["id"], "mediaType": t["kind"], "overview": t["overview"], "posterPath": None,
@@ -2621,11 +2662,20 @@ class SeerrFixture:
                     ("movies", "upcoming"): [t for t in self.titles if t["kind"] == "movie"][::-1],
                     ("tv", "upcoming"): [t for t in self.titles if t["kind"] == "tv"][::-1]}.get(tuple(segs[1:]))
             return j(self.page(pick, q)) if pick is not None else j({"message": "Not found"}, 404)
-        if len(segs) == 2 and segs[0] in ("movie", "tv") and segs[1].isdigit():
+        if len(segs) in (2, 3) and segs[0] in ("movie", "tv") and segs[1].isdigit():
             t = self.by_id(segs[0], int(segs[1]))
             if t is None:
                 return j({"message": "Not found"}, 404)
-            return j(self.detail(t))
+            if len(segs) == 2:
+                return j(self.detail(t))
+            ratings = self.ratings(t)
+            if segs[2] == "ratingscombined" and segs[0] == "movie":
+                return j(ratings) if ratings else j({"message": "Unable to retrieve ratings."}, 404)
+            if segs[2] == "ratings":
+                return j(ratings["rt"]) if ratings else j({"message": "Rotten Tomatoes ratings not found."}, 404)
+            if segs[2] == "recommendations":
+                return j(self.page([o for o in self.titles if o is not t and o["kind"] == t["kind"]], q))
+            return j({"message": "Not found"}, 404)
         if segs[:1] == ["service"] and len(segs) in (2, 3) and segs[1] in self.services:
             servers = self.services[segs[1]]
             if len(segs) == 2:
@@ -4443,6 +4493,15 @@ def _selftest_seerr():
         movie = pms.seerr.by_id(moving["type"], moving["media"]["tmdbId"])
         facts = call(f"/api/v1/movie/{movie['id']}", cookie=cookie)[1]
         assert facts["runtime"] and facts["genres"] and facts["mediaInfo"]["downloadStatus"]
+        assert facts["credits"]["cast"] and facts["relatedVideos"] and facts["tagline"]
+        rated = call(f"/api/v1/movie/{pms.seerr.titles[0]['id']}/ratingscombined", cookie=cookie)
+        assert rated[0] == 200 and rated[1]["rt"]["criticsRating"] == "Certified Fresh" and rated[1]["imdb"]["criticsScore"]
+        unrated = pms.seerr.titles[2]
+        assert call(f"/api/v1/movie/{unrated['id']}/ratingscombined", cookie=cookie)[0] == 404
+        assert call(f"/api/v1/movie/{unrated['id']}/ratings", cookie=cookie)[0] == 404
+        assert call(f"/api/v1/tv/{pms.seerr.titles[1]['id']}/ratings", cookie=cookie)[1]["criticsScore"]
+        alike = call(f"/api/v1/movie/{movie['id']}/recommendations?page=1", cookie=cookie)[1]
+        assert alike["results"] and all(r["mediaType"] == "movie" and r["id"] != movie["id"] for r in alike["results"])
         # Approving a pending request is a write; a second answer is 409, and an unknown verb 400.
         pending = next(r for r in everyone if r["status"] == 1 and r["requestedBy"]["id"] != 1)
         before = len(pms.writes)

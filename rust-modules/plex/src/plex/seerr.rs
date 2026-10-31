@@ -245,6 +245,102 @@ pub struct TitleDetail {
     /// The requests made of it (`mediaInfo.requests`), newest first. Their `downloads` are empty:
     /// the title's own are [`downloads`](Self::downloads).
     pub requests: Vec<MediaRequest>,
+    /// TMDB's one-line tagline (server text).
+    pub tagline: Option<String>,
+    /// The cast in TMDB's billing order (`credits.cast`), every one of them.
+    pub cast: Vec<CastMember>,
+    pub crew: Crew,
+    /// The title's videos on YouTube (`relatedVideos`), trailers first, then teasers, then the rest,
+    /// each kind in TMDB's order.
+    pub videos: Vec<Video>,
+    /// Age ratings by country, `(ISO 3166-1, rating)`: a movie's release certifications
+    /// (`releases.results`), a show's content ratings (`contentRatings.results`).
+    pub certifications: Vec<(String, String)>,
+    /// The streaming services that carry it, by country, `(ISO 3166-1, names)`
+    /// (`watchProviders[].flatrate`).
+    pub providers: Vec<(String, Vec<String>)>,
+}
+
+impl TitleDetail {
+    /// The age rating for `region` (an ISO 3166-1 code), else the United States' (TMDB's fullest).
+    pub fn certification(&self, region: &str) -> Option<&str> {
+        let of = |r: &str| self.certifications.iter().find(|(c, _)| c.eq_ignore_ascii_case(r)).map(|(_, v)| v.as_str());
+        of(region).or_else(|| of("US"))
+    }
+
+    /// The streaming services in `region`, else none: a service in another country is not one this
+    /// television can watch it on.
+    pub fn providers_in(&self, region: &str) -> &[String] {
+        self.providers.iter().find(|(c, _)| c.eq_ignore_ascii_case(region)).map_or(&[], |(_, v)| v.as_slice())
+    }
+
+    /// The YouTube video a Trailer button plays: the first trailer, else the first teaser.
+    pub fn trailer(&self) -> Option<&Video> {
+        self.videos.iter().find(|v| matches!(v.kind, VideoKind::Trailer | VideoKind::Teaser))
+    }
+}
+
+/// One person of a title's cast.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CastMember {
+    /// TMDB's person id.
+    pub id: i64,
+    pub name: String,
+    /// Whom they play (server text); empty when TMDB names nobody.
+    pub character: String,
+    /// TMDB image path of their photo ([`tmdb_image`]).
+    pub profile: Option<String>,
+}
+
+/// The crew a title's page names: who directed it, who wrote it, and who created a show
+/// (`createdBy`). Each list in TMDB's order, a name once.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Crew {
+    pub directors: Vec<String>,
+    pub writers: Vec<String>,
+    pub creators: Vec<String>,
+}
+
+/// One of a title's videos, as YouTube knows it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Video {
+    /// The YouTube video id.
+    pub key: String,
+    /// TMDB's name for it (server text).
+    pub name: String,
+    pub kind: VideoKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VideoKind {
+    Trailer,
+    Teaser,
+    Other,
+}
+
+/// Rotten Tomatoes' and IMDb's scores of a title, as Seerr relays them (`/ratingscombined`,
+/// `/ratings`). Each is absent when that service has none.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TitleRatings {
+    /// The critics' score, 0 to 100, and its verdict.
+    pub critics: Option<(u8, CriticsVerdict)>,
+    /// The audience's score, 0 to 100, and its verdict.
+    pub audience: Option<(u8, AudienceVerdict)>,
+    /// IMDb's rating out of 10.
+    pub imdb: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CriticsVerdict {
+    Certified,
+    Fresh,
+    Rotten,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudienceVerdict {
+    Upright,
+    Spilled,
 }
 
 /// What TMDB says about a title, as Seerr passes it on. Every field tolerates absence.
@@ -262,6 +358,16 @@ pub struct TitleFacts {
     pub studio: Option<String>,
     /// TMDB's own status words, "Released", "Returning Series" (server text).
     pub tmdb_status: Option<String>,
+    /// The language it was made in, ISO 639-1 (`originalLanguage`).
+    pub original_language: Option<String>,
+    /// A movie's budget and box office, in US dollars; `None` when TMDB has none (it sends 0).
+    pub budget: Option<i64>,
+    pub revenue: Option<i64>,
+    /// The collection a movie belongs to (server text).
+    pub collection: Option<String>,
+    /// A show's season and episode counts.
+    pub season_count: Option<i32>,
+    pub episode_count: Option<i32>,
 }
 
 /// TMDB's "anime" keyword, the one Seerr reads a show's anime-ness from (`ANIME_KEYWORD_ID`).
@@ -931,6 +1037,7 @@ fn facts_from(v: &Value, kind: MediaKind) -> TitleFacts {
             first_name("networks"),
         ),
     };
+    let count = |key: &str| int(v, key).filter(|n| *n > 0).and_then(|n| i32::try_from(n).ok());
     TitleFacts {
         rating: float(v, "voteAverage").filter(|r| *r > 0.0 && *r <= 10.0).map(|r| r as f32),
         runtime_min: runtime.filter(|m| *m > 0).and_then(|m| i32::try_from(m).ok()),
@@ -938,6 +1045,125 @@ fn facts_from(v: &Value, kind: MediaKind) -> TitleFacts {
         released,
         studio,
         tmdb_status: text(v, "status"),
+        original_language: text(v, "originalLanguage"),
+        budget: int(v, "budget").filter(|n| *n > 0),
+        revenue: int(v, "revenue").filter(|n| *n > 0),
+        collection: v.get("collection").and_then(|c| text(c, "name")),
+        season_count: count("numberOfSeasons"),
+        episode_count: count("numberOfEpisodes"),
+    }
+}
+
+/// `names` once each, in their first order.
+fn distinct(names: impl Iterator<Item = String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for name in names {
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// A detail record's cast in TMDB's billing order (`order`; a member with none goes last).
+fn cast_from(v: &Value) -> Vec<CastMember> {
+    let mut cast: Vec<(i64, CastMember)> = rows(v.get("credits"), "cast")
+        .filter_map(|c| {
+            let member = CastMember {
+                id: int(c, "id")?,
+                name: text(c, "name")?,
+                character: text(c, "character").unwrap_or_default(),
+                profile: text(c, "profilePath"),
+            };
+            Some((int(c, "order").unwrap_or(i64::MAX), member))
+        })
+        .collect();
+    cast.sort_by_key(|(order, _)| *order);
+    cast.into_iter().map(|(_, member)| member).collect()
+}
+
+/// The writing jobs a title's page credits as "Written by".
+const WRITING_JOBS: [&str; 4] = ["Screenplay", "Writer", "Story", "Teleplay"];
+
+fn crew_from(v: &Value) -> Crew {
+    let crew = || rows(v.get("credits"), "crew");
+    let with_job = |jobs: &[&str]| {
+        distinct(crew().filter(|c| text(c, "job").is_some_and(|j| jobs.contains(&j.as_str()))).filter_map(|c| text(c, "name")))
+    };
+    Crew {
+        directors: with_job(&["Director"]),
+        writers: with_job(&WRITING_JOBS),
+        creators: distinct(rows(Some(v), "createdBy").filter_map(|c| text(c, "name"))),
+    }
+}
+
+/// A detail record's YouTube videos, trailers first, then teasers, then the rest.
+fn videos_from(v: &Value) -> Vec<Video> {
+    let mut videos: Vec<Video> = rows(Some(v), "relatedVideos")
+        .filter(|r| text(r, "site").is_some_and(|s| s.eq_ignore_ascii_case("YouTube")))
+        .filter_map(|r| {
+            let kind = match text(r, "type").as_deref() {
+                Some("Trailer") => VideoKind::Trailer,
+                Some("Teaser") => VideoKind::Teaser,
+                _ => VideoKind::Other,
+            };
+            let key = text(r, "key").filter(|k| k.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')))?;
+            Some(Video { key, name: text(r, "name").unwrap_or_default(), kind })
+        })
+        .collect();
+    videos.sort_by_key(|video| match video.kind {
+        VideoKind::Trailer => 0,
+        VideoKind::Teaser => 1,
+        VideoKind::Other => 2,
+    });
+    videos
+}
+
+/// A detail record's age ratings by country: a movie's first certification of each country's
+/// release dates, a show's content rating.
+fn certifications_from(v: &Value, kind: MediaKind) -> Vec<(String, String)> {
+    match kind {
+        MediaKind::Movie => rows(v.get("releases"), "results")
+            .filter_map(|r| {
+                let rating = rows(Some(r), "release_dates").find_map(|d| text(d, "certification"))?;
+                Some((text(r, "iso_3166_1")?, rating))
+            })
+            .collect(),
+        MediaKind::Tv => rows(v.get("contentRatings"), "results")
+            .filter_map(|r| Some((text(r, "iso_3166_1")?, text(r, "rating")?)))
+            .collect(),
+    }
+}
+
+/// A detail record's streaming services by country (`flatrate`; buying and renting are left out).
+fn providers_from(v: &Value) -> Vec<(String, Vec<String>)> {
+    rows(Some(v), "watchProviders")
+        .filter_map(|r| {
+            let names = distinct(rows(Some(r), "flatrate").filter_map(|p| text(p, "name")));
+            (!names.is_empty()).then_some((text(r, "iso_3166_1")?, names))
+        })
+        .collect()
+}
+
+/// `/ratingscombined` (`{rt?, imdb?}`) or `/ratings` (the Rotten Tomatoes record alone).
+fn ratings_from(v: &Value) -> TitleRatings {
+    let rt = v.get("rt").unwrap_or(v);
+    let score = |key: &str| int(rt, key).filter(|s| (0..=100).contains(s)).map(|s| s as u8);
+    let critics = text(rt, "criticsRating").and_then(|r| match r.as_str() {
+        "Certified Fresh" => Some(CriticsVerdict::Certified),
+        "Fresh" => Some(CriticsVerdict::Fresh),
+        "Rotten" => Some(CriticsVerdict::Rotten),
+        _ => None,
+    });
+    let audience = text(rt, "audienceRating").and_then(|r| match r.as_str() {
+        "Upright" => Some(AudienceVerdict::Upright),
+        "Spilled" => Some(AudienceVerdict::Spilled),
+        _ => None,
+    });
+    TitleRatings {
+        critics: score("criticsScore").zip(critics),
+        audience: score("audienceScore").zip(audience),
+        imdb: v.get("imdb").and_then(|i| float(i, "criticsScore")).filter(|r| *r > 0.0 && *r <= 10.0).map(|r| r as f32),
     }
 }
 
@@ -1078,7 +1304,52 @@ impl SeerrClient {
             downloads: downloads_from(body.get("mediaInfo")),
             requests,
             title,
+            tagline: text(&body, "tagline"),
+            cast: cast_from(&body),
+            crew: crew_from(&body),
+            videos: videos_from(&body),
+            certifications: certifications_from(&body, kind),
+            providers: providers_from(&body),
         })
+    }
+
+    /// A title's Rotten Tomatoes and IMDb scores: a movie's `GET /api/v1/movie/{id}/ratingscombined`,
+    /// or `/ratings` (Rotten Tomatoes alone) from a server that predates it; a show's
+    /// `/api/v1/tv/{id}/ratings`. Seerr answers 404 for a title neither service matched: that is a
+    /// title with no scores, not a failure.
+    pub fn ratings(&self, session: &SeerrSession, kind: MediaKind, tmdb: i64, req: SeerrTransport)
+        -> Result<TitleRatings, SeerrError>
+    {
+        if tmdb <= 0 {
+            return Err(SeerrError::NotFound);
+        }
+        let base = format!("/api/v1/{}/{tmdb}", kind.wire());
+        let first = match kind {
+            MediaKind::Movie => call(&mut *req, "GET", self.url(&format!("{base}/ratingscombined")), Some(session), None),
+            MediaKind::Tv => Err(SeerrError::NotFound),
+        };
+        let response = match first {
+            Err(SeerrError::NotFound) => call(&mut *req, "GET", self.url(&format!("{base}/ratings")), Some(session), None),
+            other => other,
+        };
+        match response {
+            Ok(response) => Ok(ratings_from(&parse(&response)?)),
+            Err(SeerrError::NotFound) => Ok(TitleRatings::default()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// `GET /api/v1/movie|tv/{id}/recommendations`: one page of titles TMDB recommends with it.
+    pub fn recommendations(&self, session: &SeerrSession, kind: MediaKind, tmdb: i64, page: u32, req: SeerrTransport)
+        -> Result<Page<Title>, SeerrError>
+    {
+        if tmdb <= 0 {
+            return Err(SeerrError::NotFound);
+        }
+        let path = QueryBuilder::new(&format!("/api/v1/{}/{tmdb}/recommendations", kind.wire()))
+            .int("page", i64::from(page.max(1))).build();
+        let response = call(req, "GET", self.url(&path), Some(session), None)?;
+        Ok(page_from(&parse(&response)?, Some(kind)))
     }
 
     /// `GET /api/v1/service/radarr` (a movie) or `/sonarr` (a show): the servers a request of that

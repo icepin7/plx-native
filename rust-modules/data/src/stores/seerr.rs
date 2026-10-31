@@ -64,6 +64,10 @@ pub enum Slot {
     /// One page of the request list.
     Requests(u32),
     Detail(MediaKind, i64),
+    /// A title's Rotten Tomatoes and IMDb scores.
+    Ratings(MediaKind, i64),
+    /// One page of the titles recommended with a title.
+    Recommendations(MediaKind, i64, u32),
     /// A request write for one title.
     Request(MediaKind, i64),
     /// The request menu's list of the Radarr (a movie) or Sonarr (a show) servers.
