@@ -277,6 +277,66 @@ pub fn rating_mark(art: plx_data::metadata::RatingArt) -> &'static [plx_ui::widg
     }
 }
 
+/// The units a provider quotes its score in. `ui::fmt` formats a score from its SCALE alone, so the
+/// screen, which knows the provider, says which: IMDb is out of ten, every other badge a percentage.
+/// Exhaustive on purpose — a provider added to `RatingArt` has to choose its units here.
+pub fn rating_scale(art: plx_data::metadata::RatingArt) -> plx_ui::fmt::RatingScale {
+    use plx_data::metadata::RatingArt as A;
+    use plx_ui::fmt::RatingScale;
+    match art {
+        A::Imdb => RatingScale::OutOfTen,
+        A::TomatoFresh
+        | A::TomatoCertified
+        | A::TomatoRotten
+        | A::PopcornUpright
+        | A::PopcornSpilled
+        | A::Tmdb => RatingScale::Percent,
+    }
+}
+
+/// **A title's ratings row**, the one the Detail page's hero and a Seerr title's page draw: one group
+/// per provider (`ratings` is in provider order), from `x` on the line whose `LABEL` cap band starts
+/// at `y`, ending at the first group that would pass `right`.
+pub fn draw_ratings(
+    p: plx_ui::Painter,
+    ratings: &[plx_data::metadata::Rating],
+    x: f32,
+    y: f32,
+    right: f32,
+    measure: &dyn plx_machine::machine::Measure,
+) {
+    use plx_ui::hstack::{Flow, Item};
+    let (top, base) = plx_gfx::text::text_cap_band(plx_ui::theme::size::LABEL, 1);
+    let cy = y + (top + base) * 0.5;
+    // The groups are measured lazily, one at a time, and the row stops at the first that does
+    // not fit: a later, smaller group never jumps the queue, and no group past the break is
+    // ever measured (a replay holds only the widths the recording asked for), so this does not
+    // go through `HStack::fit`, which needs every width up front.
+    let mut flow = Flow::new(x, plx_ui::widgets::RATING_GROUP_GAP);
+    let mut i = 0;
+    while i < ratings.len() {
+        let provider = ratings[i].art.provider();
+        let end = i + ratings[i..].partition_point(|r| r.art.provider() == provider);
+        let scores: Vec<String> =
+            ratings[i..end].iter().map(|r| plx_ui::fmt::rating_score(rating_scale(r.art), r.value)).collect();
+        let cells: Vec<plx_ui::widgets::RatingCell<'_>> = ratings[i..end]
+            .iter()
+            .zip(scores.iter())
+            .map(|(r, score)| plx_ui::widgets::RatingCell {
+                mark: rating_mark(r.art),
+                value: score,
+                suffix: plx_ui::fmt::rating_suffix(rating_scale(r.art)),
+            })
+            .collect();
+        let width = plx_ui::widgets::rating_group_w(provider, &cells, measure);
+        if flow.next_x() + width > right {
+            break;
+        }
+        flow.place(|x| Item::new(plx_ui::widgets::rating_group(p, x, cy, provider, &cells, measure)));
+        i = end;
+    }
+}
+
 #[cfg(test)]
 #[test]
 fn sort_information_reads_the_same_thread_override_as_policy() {

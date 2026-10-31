@@ -18,5 +18,14 @@
   "seerr.menu.folder": "Map",
   "seerr.menu.free": "{size} vrij",
   "seerr.menu.loading": "Laden…",
-  "seerr.menu.unavailable": "Kan de keuzes niet laden"
+  "seerr.menu.unavailable": "Kan de keuzes niet laden",
+  "seerr.info.original_language": "Oorspronkelijke taal",
+  "seerr.info.directed_by": "Geregisseerd door",
+  "seerr.info.written_by": "Geschreven door",
+  "seerr.info.created_by": "Bedacht door",
+  "seerr.info.budget": "Budget",
+  "seerr.info.revenue": "Opbrengst",
+  "seerr.info.dollars": "$ {amount}",
+  "seerr.info.streaming": "Streaming",
+  "seerr.title.trailer_failed": "Kan YouTube niet openen."
 }

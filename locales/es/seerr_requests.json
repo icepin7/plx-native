@@ -18,5 +18,14 @@
   "seerr.menu.folder": "Carpeta",
   "seerr.menu.free": "{size} libres",
   "seerr.menu.loading": "Cargando…",
-  "seerr.menu.unavailable": "No se pudieron cargar las opciones"
+  "seerr.menu.unavailable": "No se pudieron cargar las opciones",
+  "seerr.info.original_language": "Idioma original",
+  "seerr.info.directed_by": "Dirigida por",
+  "seerr.info.written_by": "Escrita por",
+  "seerr.info.created_by": "Creada por",
+  "seerr.info.budget": "Presupuesto",
+  "seerr.info.revenue": "Taquilla",
+  "seerr.info.dollars": "{amount} US$",
+  "seerr.info.streaming": "En streaming",
+  "seerr.title.trailer_failed": "No se pudo abrir YouTube."
 }

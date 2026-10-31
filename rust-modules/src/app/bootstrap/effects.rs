@@ -201,6 +201,8 @@ fn content_request(request: &plx_screens::registry::ContentReq) -> Result<Value,
             ContentPanel::CollectionAbout => json!("collection_about"),
             ContentPanel::SeerrRequest { kind, tmdb, anchor } => json!({"seerr_request":{
                 "tv":*kind == plx_data::seerr::MediaKind::Tv,"tmdb":tmdb,"anchor":anchor}}),
+            ContentPanel::SeerrAbout { kind, tmdb } => json!({"seerr_about":{
+                "tv":*kind == plx_data::seerr::MediaKind::Tv,"tmdb":tmdb}}),
         }}),
         // Full playback still needs its own controlled bootstrap and resource/result contract.
         ContentReq::Play { .. } => return Err("unsupported controlled playback effect"),

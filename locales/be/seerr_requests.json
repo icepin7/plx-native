@@ -18,5 +18,14 @@
   "seerr.menu.folder": "Папка",
   "seerr.menu.free": "Вольна {size}",
   "seerr.menu.loading": "Загрузка…",
-  "seerr.menu.unavailable": "Не ўдалося загрузіць варыянты"
+  "seerr.menu.unavailable": "Не ўдалося загрузіць варыянты",
+  "seerr.info.original_language": "Мова арыгінала",
+  "seerr.info.directed_by": "Рэжысёр",
+  "seerr.info.written_by": "Сцэнарый",
+  "seerr.info.created_by": "Стваральнікі",
+  "seerr.info.budget": "Бюджэт",
+  "seerr.info.revenue": "Касавыя зборы",
+  "seerr.info.dollars": "{amount} $",
+  "seerr.info.streaming": "Стрымінг",
+  "seerr.title.trailer_failed": "Не ўдалося адкрыць YouTube."
 }

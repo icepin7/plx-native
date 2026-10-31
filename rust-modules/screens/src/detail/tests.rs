@@ -5196,11 +5196,11 @@ fn two_provider_ratings() -> Detail {
 
 /// The group a provider's rating row stands: width as `draw_ratings` measures it.
 fn group_w(art: plx_data::metadata::RatingArt, value: f64, m: &dyn plx_machine::machine::Measure) -> f32 {
-    let score = plx_ui::fmt::rating_score(rating_scale(art), value);
+    let score = plx_ui::fmt::rating_score(crate::registry::captions::rating_scale(art), value);
     let cells = [plx_ui::widgets::RatingCell {
-        mark: rating_mark(art),
+        mark: crate::registry::captions::rating_mark(art),
         value: &score,
-        suffix: plx_ui::fmt::rating_suffix(rating_scale(art)),
+        suffix: plx_ui::fmt::rating_suffix(crate::registry::captions::rating_scale(art)),
     }];
     plx_ui::widgets::rating_group_w(art.provider(), &cells, m)
 }
@@ -5214,10 +5214,9 @@ fn painted_x(runs: &[plx_ui::draw_census::Run], text: &str) -> Option<f32> {
 fn the_ratings_row_paints_its_groups_one_gap_apart() {
     use plx_data::metadata::RatingArt;
     let _guard = plx_base::testlock::serial();
-    let screen = bare_held(ServerId::UNSET, "rk");
     let d = two_provider_ratings();
     let m = &plx_base::fontcov::advances::ShippedMeasure;
-    let runs = plx_ui::draw_census::capture_runs(|| screen.draw_ratings(plx_ui::Painter::recording(), &d, 600.0, m));
+    let runs = plx_ui::draw_census::capture_runs(|| crate::registry::captions::draw_ratings(plx_ui::Painter::recording(), &d.ratings, plx_ui::consts::MARGIN_X, 600.0, plx_ui::consts::SCR_W - plx_ui::consts::MARGIN_X, m));
     let first = painted_x(&runs, "IMDb").expect("first caption painted");
     let second = painted_x(&runs, "TMDB").expect("second caption painted");
     assert!((first - plx_ui::consts::MARGIN_X).abs() < 0.5, "the row starts at the margin: {first}");
@@ -5232,7 +5231,6 @@ fn the_ratings_row_paints_its_groups_one_gap_apart() {
 fn a_ratings_group_that_would_overflow_the_margin_is_not_drawn() {
     use plx_data::metadata::RatingArt;
     let _guard = plx_base::testlock::serial();
-    let screen = bare_held(ServerId::UNSET, "rk");
     let d = two_provider_ratings();
     let limit = plx_ui::consts::SCR_W - plx_ui::consts::MARGIN_X;
     let overshoot = |k: f32| {
@@ -5248,12 +5246,12 @@ fn a_ratings_group_that_would_overflow_the_margin_is_not_drawn() {
     let m = ScaledMeasure(hi);
     let over = overshoot(hi);
     assert!(over > 0.0 && over < plx_ui::widgets::RATING_GROUP_GAP, "just past the margin, by less than a gap: {over}");
-    let runs = plx_ui::draw_census::capture_runs(|| screen.draw_ratings(plx_ui::Painter::recording(), &d, 600.0, &m));
+    let runs = plx_ui::draw_census::capture_runs(|| crate::registry::captions::draw_ratings(plx_ui::Painter::recording(), &d.ratings, plx_ui::consts::MARGIN_X, 600.0, plx_ui::consts::SCR_W - plx_ui::consts::MARGIN_X, &m));
     assert!(painted_x(&runs, "IMDb").is_some(), "the group that fits is drawn");
     assert!(painted_x(&runs, "TMDB").is_none(), "the group past the margin is not: {runs:?}");
     // and just inside, both are
     let m = ScaledMeasure(lo);
-    let runs = plx_ui::draw_census::capture_runs(|| screen.draw_ratings(plx_ui::Painter::recording(), &d, 600.0, &m));
+    let runs = plx_ui::draw_census::capture_runs(|| crate::registry::captions::draw_ratings(plx_ui::Painter::recording(), &d.ratings, plx_ui::consts::MARGIN_X, 600.0, plx_ui::consts::SCR_W - plx_ui::consts::MARGIN_X, &m));
     assert!(painted_x(&runs, "TMDB").is_some(), "a group that fits is drawn");
 }
 

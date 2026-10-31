@@ -304,14 +304,17 @@ pub const SHAPE: &str = "AboutPanelScreen{page:usize,scroll:Spring{pos:f32,vel:f
 /// owns the spring; this is only the distance it drives.
 const RISE: f32 = plx_ui::popover::Popover::RISE;
 
-/// **Whose prose the sheet reads.** The panel is the same §1A sheet behind two pages' `MORE`: the
-/// Detail page's About card (`metadata::current()`) and the Collection page's 3-line summary
-/// (`collection::current()`). The source is fixed by the ARGUMENT that mounted it
-/// (`AppArg::AboutPanel` / `AppArg::CollectionAbout`), so it is not logical state of its own.
+/// **Whose prose the sheet reads.** The panel is the same §1A sheet behind three pages' `MORE`: the
+/// Detail page's About card (`metadata::current()`), the Collection page's 3-line summary
+/// (`collection::current()`) and a Seerr title page's overview (the Seerr store's detail of that
+/// title, with its tagline). The source is fixed by the ARGUMENT that mounted it
+/// (`AppArg::AboutPanel` / `AppArg::CollectionAbout` / `AppArg::SeerrAbout`), so it is not logical
+/// state of its own.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum AboutSource {
     Detail,
     Collection,
+    Seerr(plx_data::seerr::MediaKind, i64),
 }
 
 /// The About footer's card, read in full. Presented on the Detail page's own `ModalStack`
@@ -341,6 +344,16 @@ impl AboutPanelScreen {
         Self {
             entry,
             source: AboutSource::Collection,
+            scroll: ProseScroll::new(),
+        }
+    }
+
+    /// A Seerr title's overview, read in full, with TMDB's tagline under it: the same sheet over the
+    /// Seerr store's detail of that title (`screens::seerr_title`'s `MORE`).
+    pub fn seerr(entry: plx_machine::machine::EntryId, kind: plx_data::seerr::MediaKind, tmdb: i64) -> Self {
+        Self {
+            entry,
+            source: AboutSource::Seerr(kind, tmdb),
             scroll: ProseScroll::new(),
         }
     }
@@ -468,6 +481,10 @@ impl AboutPanelScreen {
             AboutSource::Collection => {
                 let c = H::collection(cx).current()?;
                 Some((c.summary.as_str(), ""))
+            }
+            AboutSource::Seerr(kind, tmdb) => {
+                let d = <H as crate::registry::MetadataLike>::seerr(cx)?.title_detail(kind, tmdb)?;
+                Some((d.title.overview.as_deref().unwrap_or(""), d.tagline.as_deref().unwrap_or("")))
             }
         }
     }
@@ -635,17 +652,7 @@ impl<H: crate::registry::AppLike + crate::registry::MetadataLike + crate::regist
         // one page and dismissed with it, so in practice they are the same item; reading
         // `metadata::current()` keeps this module's dependency at the store it always had rather
         // than adding a copy of the page's identity to an argument that carries nothing.
-        let meta = H::metadata(f.cx);
-        let (summary, tagline) = match self.source {
-            AboutSource::Detail => {
-                let Some(d) = meta.current() else { return };
-                (d.summary.as_str(), d.tagline.as_str())
-            }
-            AboutSource::Collection => {
-                let Some(c) = H::collection(f.cx).current() else { return };
-                (c.summary.as_str(), "")
-            }
-        };
+        let Some((summary, tagline)) = self.prose(f.cx) else { return };
         // The container owns the appear spring; `DrawFrame::page_alpha` IS `Surface::motion.appear`
         // for a surface, which is what this panel's own `Popover` used to hold.
         let appear = f.page_alpha;

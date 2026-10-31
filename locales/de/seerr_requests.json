@@ -18,5 +18,14 @@
   "seerr.menu.folder": "Ordner",
   "seerr.menu.free": "{size} frei",
   "seerr.menu.loading": "Wird geladen…",
-  "seerr.menu.unavailable": "Optionen konnten nicht geladen werden"
+  "seerr.menu.unavailable": "Optionen konnten nicht geladen werden",
+  "seerr.info.original_language": "Originalsprache",
+  "seerr.info.directed_by": "Regie",
+  "seerr.info.written_by": "Drehbuch",
+  "seerr.info.created_by": "Erstellt von",
+  "seerr.info.budget": "Budget",
+  "seerr.info.revenue": "Einspielergebnis",
+  "seerr.info.dollars": "{amount} $",
+  "seerr.info.streaming": "Streaming",
+  "seerr.title.trailer_failed": "YouTube konnte nicht geöffnet werden."
 }

@@ -81,5 +81,44 @@
   "seerr.menu.unavailable": {
     "value": "Couldn't load the choices",
     "description": "Requesting a title through the household's Seerr server: Request menu note: the servers, profiles or folders could not be read; the request can still be sent"
+  },
+  "seerr.info.original_language": {
+    "value": "Original language",
+    "description": "Requesting a title through the household's Seerr server: A title's page: Information label: the language the title was made in; its value is the language's own name"
+  },
+  "seerr.info.directed_by": {
+    "value": "Directed by",
+    "description": "Requesting a title through the household's Seerr server: A title's page: Information label; its value is the director's name, or several separated by commas"
+  },
+  "seerr.info.written_by": {
+    "value": "Written by",
+    "description": "Requesting a title through the household's Seerr server: A title's page: Information label; its value is the writers' names, separated by commas"
+  },
+  "seerr.info.created_by": {
+    "value": "Created by",
+    "description": "Requesting a title through the household's Seerr server: A title's page: Information label for a show; its value is the creators' names, separated by commas"
+  },
+  "seerr.info.budget": {
+    "value": "Budget",
+    "description": "Requesting a title through the household's Seerr server: A title's page: Information label for a movie; its value is what the movie cost to make, in US dollars"
+  },
+  "seerr.info.revenue": {
+    "value": "Box office",
+    "description": "Requesting a title through the household's Seerr server: A title's page: Information label for a movie; its value is what it earned in cinemas worldwide, in US dollars"
+  },
+  "seerr.info.dollars": {
+    "value": "${amount}",
+    "args": {
+      "amount": "str"
+    },
+    "description": "Requesting a title through the household's Seerr server: A title's page: An amount of US dollars as the budget and box office say it; {amount} is the number, grouped as the language groups numbers (165,000,000)"
+  },
+  "seerr.info.streaming": {
+    "value": "Streaming on",
+    "description": "Requesting a title through the household's Seerr server: A title's page: Information label; its value is the streaming services in this television's country that carry the title"
+  },
+  "seerr.title.trailer_failed": {
+    "value": "Couldn't open YouTube.",
+    "description": "Requesting a title through the household's Seerr server: A title's page: Status line when the Trailer button could not open the television's YouTube app"
   }
 }

@@ -1193,6 +1193,10 @@ pub enum ContentPanel {
     /// title goes, anchored to the control that opened it (the Seerr title page's pill, the Detail
     /// page's request disc). It names its own title, so it takes no subject.
     SeerrRequest { kind: plx_data::seerr::MediaKind, tmdb: i64, anchor: [u32; 4] },
+    /// A **Seerr title's overview**, in full, with its tagline: the About sheet (`screens::about_panel`)
+    /// over the Seerr store's detail of the title, behind the Seerr title page's `MORE`. The store
+    /// holds many titles' details, so the sheet names its title.
+    SeerrAbout { kind: plx_data::seerr::MediaKind, tmdb: i64 },
 }
 
 impl ContentPanel {
@@ -1252,6 +1256,7 @@ impl ContentPanel {
                 Style::Compact,
                 AppArg::SeerrRequest(crate::seerr_request::SeerrRequestArg { kind, tmdb, anchor }),
             ),
+            Self::SeerrAbout { kind, tmdb } => (Style::Alert, AppArg::SeerrAbout { kind, tmdb }),
         })
     }
 }
@@ -1897,6 +1902,9 @@ pub enum AppArg {
     /// The Collection page's summary sheet — the About panel over `collection::current()`. **It
     /// carries nothing**, for `PersonBio`'s reasons.
     CollectionAbout,
+    /// A Seerr title's overview sheet — the About panel over the Seerr store's detail of the title it
+    /// names (the store holds many).
+    SeerrAbout { kind: plx_data::seerr::MediaKind, tmdb: i64 },
     /// plex.tv sign-in (QR) — shown when there is no usable session.
     Login,
     /// The "who's watching" Plex Home picker.
@@ -1964,7 +1972,7 @@ pub const ARG_SHAPE: &str = "AppArg{Login,Profiles,Onboard,Home,Library,LibraryC
      ItemMenu{sid:u32,rk:str,kind:{Card{from_deck:bool,type:u32},Episode{mark:u32},Season{mark:u32},Catalog{state:u32}},\
      host:u32,focus:Option<{entry:u32,elem:u32}>,anchor:[u32;4],loaded_episode:bool,from_home:bool,catalog:Option<{guid:str}>},\
      WatchlistMenu{host:u32,options:{type:u32,sort:u32,descending:bool,show:u32},anchor:[u32;4]},\
-     SeerrRequest{tv:bool,tmdb:u64,anchor:[u32;4]}}";
+     SeerrRequest{tv:bool,tmdb:u64,anchor:[u32;4]},SeerrAbout{tv:bool,tmdb:u64}}";
 
 impl LogicalState for AppArg {
     fn write(&self, c: &mut Canon) {
@@ -1991,6 +1999,10 @@ impl LogicalState for AppArg {
             Self::VersionsPanel(arg) => { c.u32(14); arg.write(c); }
             // 15, forward of Play Version's 14.
             Self::SeerrRequest(arg) => { c.u32(15); arg.write(c); }
+            // 16, forward of the request menu's 15.
+            Self::SeerrAbout { kind, tmdb } => {
+                c.u32(16).bool(*kind == plx_data::seerr::MediaKind::Tv).u64(*tmdb as u64);
+            }
             // The seven PAGE variants keep the canon bytes `Legacy(Route)` wrote — a `0` tag and
             // then the route's own — so a recording taken before the fold and one taken after are
             // byte-comparable at every page frame. Only the SHAPE STRING moved, which is what the
@@ -2046,7 +2058,8 @@ impl plx_ui::screen::ScreenArg for AppArg {
             | AppArg::TracksPanel(_)
             | AppArg::AboutPanel
             | AppArg::PersonBio
-            | AppArg::CollectionAbout => Chrome::None,
+            | AppArg::CollectionAbout
+            | AppArg::SeerrAbout { .. } => Chrome::None,
         }
     }
     fn id(&self) -> ScreenId {
@@ -2106,6 +2119,8 @@ impl plx_ui::screen::ScreenArg for AppArg {
             AppArg::VersionsPanel(_) => 30,
             // 33, forward of the Seerr tab's 32.
             AppArg::SeerrRequest(_) => 33,
+            // 34, forward of the request menu's 33.
+            AppArg::SeerrAbout { .. } => 34,
         })
     }
     fn title(&self) -> Option<&str> {
@@ -2247,6 +2262,9 @@ where
             ),
             AppArg::CollectionAbout => Box::new(
                 crate::about_panel::AboutPanelScreen::collection(entry),
+            ),
+            AppArg::SeerrAbout { kind, tmdb } => Box::new(
+                crate::about_panel::AboutPanelScreen::seerr(entry, *kind, *tmdb),
             ),
             AppArg::Content(ContentArg::Detail { sid, rk }) => {
                 let mut page = crate::detail::DetailScreen::new(entry, *sid, rk.clone(), H::hubs(cx));
@@ -2445,6 +2463,7 @@ pub fn every_surface_arg() -> Vec<AppArg> {
         AppArg::AboutPanel,
         AppArg::PersonBio,
         AppArg::CollectionAbout,
+        AppArg::SeerrAbout { kind: plx_data::seerr::MediaKind::Movie, tmdb: 1 },
     ];
     // The player's panels are ONE screen with several kinds, and each answers a different
     // `Screen::name` — so every kind is listed, not one representative.
@@ -2463,6 +2482,7 @@ pub fn every_surface_arg() -> Vec<AppArg> {
             | AppArg::AboutPanel
             | AppArg::PersonBio
             | AppArg::CollectionAbout
+            | AppArg::SeerrAbout { .. }
             | AppArg::PlayerOverlay(_)
             | AppArg::Settings(_)
             | AppArg::FirstRunConsent(_) => {}
@@ -2749,7 +2769,11 @@ pub const SCREEN_SHAPES: &[&str] = &[
 // Merging main's HUD commands (PR3): `PlayerOverlay::More` names the page it opens on,
 // `More(page:u8)` (0 the root, 1 Quality, 2 Speed) where it carried `More(quality:bool)`; main's own
 // pin for that was 0xb633_b65b_ed93_ca93 and this branch's was 0xa2c7_ae3a_69f0_4fce.
-const SCREEN_SHAPES_PIN: u64 = 0xbcfa_7fdf_498b_7520;
+// A title's page shows more of what Seerr knows (docs/seerr.md): `ARG_SHAPE` gains
+// `SeerrAbout{tv,tmdb}` (the About sheet over a Seerr title's overview) and
+// `SeerrTitleScreen::SHAPE` gains `next`, the Related shelf's `related` and the page's `stack`; the
+// previous pin was 0xbcfa_7fdf_498b_7520.
+const SCREEN_SHAPES_PIN: u64 = 0xfd30_ad44_5520_21c5;
 
 #[cfg(test)]
 mod arg_tests {
@@ -2885,6 +2909,19 @@ mod arg_tests {
         assert_ne!(arg.id(), AppArg::AboutPanel.id(),
             "the Detail About sheet and the Collection summary are distinct surfaces");
         assert_ne!(arg.hash(), AppArg::AboutPanel.hash());
+    }
+
+    #[test]
+    fn a_seerr_titles_more_sheet_is_an_alert_that_names_its_title() {
+        use plx_data::seerr::MediaKind;
+        let (style, arg) = ContentPanel::SeerrAbout { kind: MediaKind::Tv, tmdb: 62 }
+            .surface(plx_machine::machine::InstanceId(1), None)
+            .expect("a Seerr title page has no item subject");
+        assert!(matches!(style, plx_ui::containers::modal::Style::Alert));
+        assert!(matches!(arg, AppArg::SeerrAbout { kind: MediaKind::Tv, tmdb: 62 }));
+        assert_ne!(arg.id(), AppArg::CollectionAbout.id());
+        let other = AppArg::SeerrAbout { kind: MediaKind::Tv, tmdb: 63 };
+        assert_ne!(arg.hash(), other.hash(), "two titles' sheets are two surfaces");
     }
 
     #[test]

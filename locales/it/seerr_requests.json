@@ -18,5 +18,14 @@
   "seerr.menu.folder": "Cartella",
   "seerr.menu.free": "{size} liberi",
   "seerr.menu.loading": "Caricamento…",
-  "seerr.menu.unavailable": "Impossibile caricare le opzioni"
+  "seerr.menu.unavailable": "Impossibile caricare le opzioni",
+  "seerr.info.original_language": "Lingua originale",
+  "seerr.info.directed_by": "Regia di",
+  "seerr.info.written_by": "Scritto da",
+  "seerr.info.created_by": "Ideata da",
+  "seerr.info.budget": "Budget",
+  "seerr.info.revenue": "Incassi",
+  "seerr.info.dollars": "{amount} $",
+  "seerr.info.streaming": "In streaming",
+  "seerr.title.trailer_failed": "Impossibile aprire YouTube."
 }

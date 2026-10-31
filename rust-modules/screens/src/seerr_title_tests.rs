@@ -5,10 +5,10 @@
 use super::*;
 use crate::registry::{AppMsg, PageMemory};
 use plx_data::search::view::SearchView;
-use plx_data::seerr::{Season, SeerrIo, SeerrSession, SeerrUser, Title, TitleFacts};
+use plx_data::seerr::{AudienceVerdict, CastMember, CriticsVerdict, Season, SeerrIo, SeerrSession, SeerrUser, Title, TitleFacts};
 use plx_data::stores::StoreJob;
 use plx_data::watchlist::WatchlistInput;
-use plx_machine::machine::{FocusRead, Host, InstanceId, MachineId, PressRead, Stamped};
+use plx_machine::machine::{FocusRead, Host, InstanceId, MachineId, PressRead, Stamped, Tick};
 use plx_machine::present::Present;
 use plx_ui::fixture::FixtureMeasure;
 use plx_ui::screen::ScreenArg;
@@ -50,9 +50,8 @@ fn the_facts_line_names_what_tmdb_said_and_leaves_out_what_it_did_not() {
     assert_eq!(facts(MediaKind::Movie, &detail), [
         msg::browse_kind_movie().to_string(), "2024".into(),
         fmt::duration_minutes_in(plx_platform::i18n::current(), 166),
-        fmt::rating_score(fmt::RatingScale::Percent, f64::from(8.2f32)),
         "s0g".into(), "s1g".into(), "s0st".into(),
-    ], "two genres at most");
+    ], "two genres at most; the score stands in the ratings row, named");
     assert_eq!(facts(MediaKind::Tv, &movie(Availability::Unknown)), [msg::browse_kind_tv_show().to_string()]);
 }
 
@@ -119,6 +118,14 @@ struct Script {
     permissions: u64,
     decided: Mutex<Vec<SeerrOp>>,
     decide: Result<SeerrData, SeerrError>,
+    /// The title's overview and cast, and how many pages of recommendations the server holds.
+    overview: String,
+    cast: Vec<CastMember>,
+    related_pages: u32,
+}
+
+fn titled(tmdb: i64) -> Title {
+    Title { kind: Some(MediaKind::Movie), tmdb, title: format!("s{tmdb:08x}"), ..Default::default() }
 }
 impl SeerrIo for Script {
     fn sign_in(&self, _: &str, _: &plx_data::seerr::SeerrLogin) -> Result<(SeerrSession, SeerrUser), SeerrError> {
@@ -133,12 +140,25 @@ impl SeerrIo for Script {
                 } else {
                     detail.requests = vec![MediaRequest { status: RequestStatus::Approved, ..waiting(5) }];
                 }
+                detail.title.overview = Some(self.overview.clone()).filter(|o| !o.is_empty());
+                detail.cast = self.cast.clone();
                 Ok(SeerrData::Detail(detail))
             }
             SeerrOp::Decide { .. } => {
                 self.decided.lock().unwrap().push(op.clone());
                 self.decide.clone()
             }
+            SeerrOp::Ratings { .. } => Ok(SeerrData::Ratings(TitleRatings::default())),
+            // Page 1 holds 101, 102 and the title itself; page 2 holds 102 again and 201.
+            SeerrOp::Recommendations { page, .. } => Ok(SeerrData::Titles(plx_data::seerr::Page {
+                items: match (self.related_pages, page) {
+                    (0, _) => Vec::new(),
+                    (_, 1) => vec![titled(101), titled(102), titled(1)],
+                    _ => vec![titled(102), titled(201)],
+                },
+                page: *page,
+                pages: self.related_pages,
+            })),
             other => panic!("the title page asked for {other:?}"),
         }
     }
@@ -154,7 +174,12 @@ struct Fixture {
 
 impl Fixture {
     fn new(permissions: u64, decide: Result<SeerrData, SeerrError>) -> Self {
-        let script = Arc::new(Script { permissions, decided: Mutex::new(Vec::new()), decide });
+        Self::with(Script { permissions, decided: Mutex::new(Vec::new()), decide, overview: String::new(), cast: Vec::new(),
+            related_pages: 0 })
+    }
+
+    fn with(script: Script) -> Self {
+        let script = Arc::new(script);
         let mut seerr = SeerrStore::with_io(script.clone());
         seerr.set_address("http://127.0.0.1:5055");
         Self { search: plx_data::stores::search::SearchStore::default().snapshot(), seerr, script,
@@ -265,7 +290,115 @@ fn a_refused_decision_says_why_and_keeps_the_buttons() {
     fixture.run(&mut screen, ScreenEvent::Mount);
     let asked = fixture.run(&mut screen, ScreenEvent::Activate(APPROVE_ELEM));
     assert_eq!(asked, [Slot::Decide(5)], "a refusal is not read back");
-    let detail = screen.detail(Some(&fixture.seerr)).unwrap();
-    assert_eq!(status_line(detail, None, screen.decision(Some(&fixture.seerr))), Some(msg::seerr_decide_forbidden()));
+    let detail = screen.page.detail(Some(&fixture.seerr)).unwrap();
+    assert_eq!(status_line(detail, None, screen.page.decision(Some(&fixture.seerr))), Some(msg::seerr_decide_forbidden()));
     assert_eq!(fixture.controls(&screen), [APPROVE_ELEM, DECLINE_ELEM], "it can be tried again");
+}
+
+/// A page whose overview the hero cuts, with a cast and two pages of recommendations.
+fn rich(permissions: u64, overview: &str) -> Fixture {
+    let cast = vec![
+        CastMember { id: 7, name: "s0000ca57".into(), character: "s0000c4a2".into(), profile: Some("/c.jpg".into()) },
+        CastMember { id: 8, name: "s0000ca58".into(), character: String::new(), profile: None },
+    ];
+    Fixture::with(Script { permissions, decided: Mutex::new(Vec::new()), decide: Ok(SeerrData::Decided),
+        overview: overview.into(), cast, related_pages: 2 })
+}
+
+/// Long enough that the hero cuts it at every shipped size.
+fn long_overview() -> String {
+    (0..160).map(|i| format!("s{i:04x}")).collect::<Vec<_>>().join(" ")
+}
+
+fn panels(out: &[Stamped<SeerrHost>]) -> Vec<&ContentReq> {
+    out.iter().filter_map(|s| match &s.fx { Fx::App(AppFx::Content(req)) => Some(req), _ => None }).collect()
+}
+
+#[test]
+fn mounting_asks_the_title_its_scores_and_the_first_page_of_what_is_recommended_with_it() {
+    let _g = plx_base::testlock::serial();
+    let mut fixture = Fixture::new(0, Ok(SeerrData::Decided));
+    let mut screen = SeerrTitleScreen::new(ENTRY, MediaKind::Movie, 1);
+    let out = fixture.step(&mut screen, ScreenEvent::Mount);
+    assert_eq!(fixture.serve(&out), [Slot::Detail(MediaKind::Movie, 1), Slot::Ratings(MediaKind::Movie, 1),
+        Slot::Recommendations(MediaKind::Movie, 1, 1)]);
+}
+
+#[test]
+fn seerrs_scores_read_as_the_shared_rating_marks() {
+    let r = TitleRatings { critics: Some((94, CriticsVerdict::Certified)), audience: Some((40, AudienceVerdict::Spilled)),
+        imdb: Some(8.1) };
+    let got: Vec<(RatingArt, String)> = ratings(&r, Some(7.5)).iter()
+        .map(|r| (r.art, fmt::rating_score(crate::registry::captions::rating_scale(r.art), r.value))).collect();
+    assert_eq!(got, [(RatingArt::TomatoCertified, "94%".to_string()), (RatingArt::PopcornSpilled, "40%".into()),
+        (RatingArt::Imdb, "8.1".into()), (RatingArt::Tmdb, "75%".into())],
+        "the tomato, the popcorn, IMDb, TMDB: the Detail page's marks");
+    let fresh = TitleRatings { critics: Some((61, CriticsVerdict::Fresh)), audience: Some((90, AudienceVerdict::Upright)),
+        imdb: None };
+    assert_eq!(ratings(&fresh, None).iter().map(|r| r.art).collect::<Vec<_>>(), [RatingArt::TomatoFresh, RatingArt::PopcornUpright]);
+    assert!(ratings(&TitleRatings::default(), None).is_empty(), "no scores, no row");
+}
+
+#[test]
+fn a_cut_overview_is_a_stop_above_the_controls_and_reads_in_full() {
+    let _g = plx_base::testlock::serial();
+    let mut fixture = rich(plx_plex::plex::seerr::PERMISSION_ADMIN, &long_overview());
+    let mut screen = SeerrTitleScreen::new(ENTRY, MediaKind::Movie, 1);
+    fixture.run(&mut screen, ScreenEvent::Mount);
+    assert_eq!(screen.page.elems, [APPROVE_ELEM, DECLINE_ELEM, SYNOPSIS_ELEM], "the controls first: the page seats on them");
+    let step = |at, dir| StackPage::<SeerrHost>::plain_step(&screen.page, Sec::Hero, at, dir);
+    assert_eq!((step(0, Dir::Right), step(1, Dir::Right), step(0, Dir::Left)), (Some(1), None, None), "the row");
+    assert_eq!((step(1, Dir::Up), step(2, Dir::Down), step(2, Dir::Up)), (Some(2), Some(0), None),
+        "up to the overview, down to the first control");
+    let out = fixture.step(&mut screen, ScreenEvent::Activate(SYNOPSIS_ELEM));
+    assert!(matches!(panels(&out).as_slice(),
+        [ContentReq::Panel(ContentPanel::SeerrAbout { kind: MediaKind::Movie, tmdb: 1 })]), "the About sheet, of this title");
+
+    let mut short = rich(plx_plex::plex::seerr::PERMISSION_ADMIN, "s0000ab0e.");
+    let mut screen = SeerrTitleScreen::new(ENTRY, MediaKind::Movie, 1);
+    short.run(&mut screen, ScreenEvent::Mount);
+    assert_eq!(screen.page.elems, [APPROVE_ELEM, DECLINE_ELEM], "an overview the hero shows whole is no stop");
+    assert!(panels(&short.step(&mut screen, ScreenEvent::Activate(SYNOPSIS_ELEM))).is_empty());
+}
+
+#[test]
+fn the_cast_shelf_names_each_person_and_whom_they_play() {
+    let _g = plx_base::testlock::serial();
+    let mut fixture = rich(0, "");
+    let mut screen = SeerrTitleScreen::new(ENTRY, MediaKind::Movie, 1);
+    fixture.run(&mut screen, ScreenEvent::Mount);
+    let cx = Cx { views: (fixture.search.view(), &fixture.seerr), tick: Tick::default(), measure: &fixture.measure,
+        focus: FocusRead::default(), press: PressRead::default(), owner: plx_machine::machine::InputOwner::Entry(ENTRY) };
+    let Some(Cards::Cast(cast)) = StackPage::<SeerrHost>::cards(&screen.page, &cx, Sec::Cast) else { panic!("a cast shelf") };
+    assert_eq!(CardSource::<SeerrHost>::len(&cast), 2);
+    let label = CardSource::<SeerrHost>::label(&cast, 0);
+    let text = |c: &Option<CString>| c.as_ref().map(|c| c.to_string_lossy().into_owned());
+    assert_eq!((text(&label.title), text(&label.caption)), (Some("s0000ca57".into()), Some("s0000c4a2".into())));
+    let elem = CardSource::<SeerrHost>::elem(&cast, 1);
+    assert_eq!(CardSource::<SeerrHost>::index_of(&cast, &elem), Some(1));
+    assert_eq!(screen.page.photos, [Some("https://image.tmdb.org/t/p/w185/c.jpg".into()), None], "a photo through TMDB's sizes");
+    assert!(panels(&fixture.step(&mut screen, ScreenEvent::Activate(elem))).is_empty(), "no person page to open");
+}
+
+#[test]
+fn the_related_shelf_holds_each_recommended_title_once_and_opens_it() {
+    let _g = plx_base::testlock::serial();
+    let mut fixture = rich(0, "");
+    let mut screen = SeerrTitleScreen::new(ENTRY, MediaKind::Movie, 1);
+    fixture.run(&mut screen, ScreenEvent::Mount);
+    let ids = |s: &SeerrTitleScreen| s.page.related.iter().map(|c| c.tmdb).collect::<Vec<_>>();
+    assert_eq!(ids(&screen), [101, 102], "the title itself left out");
+    assert!(screen.page.related_more);
+    // The reader walked near the shelf's end: the stack asks the next page (`CardEvent::Want`).
+    let ask = SeerrCmd::Ask { slot: Slot::Recommendations(MediaKind::Movie, 1, 2),
+        op: SeerrOp::Recommendations { kind: MediaKind::Movie, tmdb: 1, page: 2 } };
+    fixture.seerr.run(ask, &fixture.input);
+    fixture.serve(&[]);
+    fixture.run(&mut screen, ScreenEvent::Tick(Tick::default()));
+    assert_eq!(ids(&screen), [101, 102, 201], "a title the next page repeats is shown once");
+    assert!(!screen.page.related_more);
+    let elem = screen.page.related_elems[2];
+    let out = fixture.step(&mut screen, ScreenEvent::Activate(elem));
+    assert!(matches!(panels(&out).as_slice(),
+        [ContentReq::Push(ContentArg::SeerrTitle { kind: MediaKind::Movie, tmdb: 201 })]), "its own page");
 }

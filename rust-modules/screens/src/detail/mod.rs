@@ -2921,7 +2921,8 @@ impl DetailScreen {
         let prose = p.alpha(self.preview_chrome * self.preview_prose);
         if let Some(d) = d {
             self.draw_identity_line(prose, d, chain.meta_y, cx.measure);
-            self.draw_ratings(prose, d, chain.ratings_y, cx.measure);
+            crate::registry::captions::draw_ratings(prose, &d.ratings, plx_ui::consts::MARGIN_X, chain.ratings_y,
+                plx_ui::consts::SCR_W - plx_ui::consts::MARGIN_X, cx.measure);
         }
         if !synopsis.is_empty() {
             synopsis_view.draw(
@@ -3000,46 +3001,6 @@ impl DetailScreen {
             if present {
                 flow.place(|x| Item::new(plx_ui::widgets::keyline_chip(p, x, cy, label, theme::TEXT_SECONDARY, measure)));
             }
-        }
-    }
-
-    fn draw_ratings(
-        &self,
-        p: Painter,
-        d: &Detail,
-        y: f32,
-        measure: &dyn plx_machine::machine::Measure,
-    ) {
-        let (top, base) = plx_gfx::text::text_cap_band(theme::size::LABEL, 1);
-        let cy = y + (top + base) * 0.5;
-        // The groups are measured lazily, one at a time, and the row stops at the first that does
-        // not fit: a later, smaller group never jumps the queue, and no group past the break is
-        // ever measured (a replay holds only the widths the recording asked for), so this does not
-        // go through `HStack::fit`, which needs every width up front.
-        let mut flow = Flow::new(plx_ui::consts::MARGIN_X, plx_ui::widgets::RATING_GROUP_GAP);
-        let mut i = 0;
-        while i < d.ratings.len() {
-            let provider = d.ratings[i].art.provider();
-            let end = i + d.ratings[i..].partition_point(|r| r.art.provider() == provider);
-            let scores: Vec<String> = d.ratings[i..end]
-                .iter()
-                .map(|r| plx_ui::fmt::rating_score(rating_scale(r.art), r.value))
-                .collect();
-            let cells: Vec<plx_ui::widgets::RatingCell<'_>> = d.ratings[i..end]
-                .iter()
-                .zip(scores.iter())
-                .map(|(r, score)| plx_ui::widgets::RatingCell {
-                    mark: rating_mark(r.art),
-                    value: score,
-                    suffix: plx_ui::fmt::rating_suffix(rating_scale(r.art)),
-                })
-                .collect();
-            let width = plx_ui::widgets::rating_group_w(provider, &cells, measure);
-            if flow.next_x() + width > plx_ui::consts::SCR_W - plx_ui::consts::MARGIN_X {
-                break;
-            }
-            flow.place(|x| Item::new(plx_ui::widgets::rating_group(p, x, cy, provider, &cells, measure)));
-            i = end;
         }
     }
 
@@ -3345,26 +3306,10 @@ fn hero_blurb<'a>(
     )
 }
 
-/// The units a provider quotes its score in. `ui::fmt` formats a score from its SCALE alone, so the
-/// screen, which knows the provider, says which: IMDb is out of ten, every other badge a percentage.
-/// Exhaustive on purpose — a provider added to `RatingArt` has to choose its units here.
-fn rating_scale(art: plx_data::metadata::RatingArt) -> plx_ui::fmt::RatingScale {
-    use plx_data::metadata::RatingArt as A;
-    use plx_ui::fmt::RatingScale;
-    match art {
-        A::Imdb => RatingScale::OutOfTen,
-        A::TomatoFresh
-        | A::TomatoCertified
-        | A::TomatoRotten
-        | A::PopcornUpright
-        | A::PopcornSpilled
-        | A::Tmdb => RatingScale::Percent,
-    }
-}
 
 #[cfg(test)]
 mod rating_scale_tests {
-    use super::rating_scale;
+    use crate::registry::captions::rating_scale;
     use plx_data::metadata::RatingArt;
     use plx_ui::fmt::rating_score;
 
@@ -3379,10 +3324,6 @@ mod rating_scale_tests {
         assert_eq!(score(RatingArt::Imdb, 7.4), "7.4");
         assert_eq!(score(RatingArt::TomatoFresh, 10.0), "100%");
     }
-}
-
-fn rating_mark(art: plx_data::metadata::RatingArt) -> &'static [plx_ui::widgets::MarkLayer] {
-    crate::registry::captions::rating_mark(art)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

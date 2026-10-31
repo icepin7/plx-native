@@ -89,13 +89,29 @@ other switches in place. The page opens on Requests.
 
 ## A title's page
 
-`screens/src/seerr_title.rs`, opened by a Discover card, a Search Request card or a request row.
-Under the title it says what Seerr knows: TMDB's facts (kind, year, runtime, TMDB's score as a
-percentage, two genres, the network or studio), the availability (or what the last request or
-decision said), the newest request (its state, who asked and when, who approved or declined it),
-the download while one moves (with the amber band) and, for a show, one chip per season with its
-own state (Available, Partly available, Pending, Processing, Missing, Blocked). The words a request
-is described by are written once, in `registry::seerr_cards`, for the tab's rows and this page.
+`screens/src/seerr_title.rs`, opened by a Discover card, a Search Request card, a request row or a
+Related card on another title's page. It is a scrolling page (`plx_ui::cards::Stack`) over the
+title's backdrop, which fades as the page scrolls, in four parts:
+
+- **The hero.** TMDB's facts (kind, year, runtime, two genres, the network or studio); the ratings
+  row the Detail page draws, from Seerr's Rotten Tomatoes (critics and audience, with their tomato and
+  popcorn marks) and IMDb scores and TMDB's own; the availability (or what the last request or
+  decision said); the newest request (its state, who asked and when, who approved or declined it);
+  the download while one moves (with the amber band); for a show, one chip per season with its own
+  state (Available, Partly available, Pending, Processing, Missing, Blocked); the overview, cut to the
+  hero's lines; and the controls. An overview the hero cuts is a stop of its own above the controls
+  with the app's `MORE`, and OK on it reads it in full, with TMDB's tagline, in the About sheet
+  (`ContentPanel::SeerrAbout`). The words a request is described by are written once, in
+  `registry::seerr_cards`, for the tab's rows and this page.
+- **Information** (`seerr_title/info.rs`): release date, age rating and streaming services for this
+  television's country (the UI language's formatting region; the United States' age rating when the
+  country has none), original language, who directed it (a show: who created it) and who wrote it,
+  a movie's budget and box office, and its collection, three to a row. A pair Seerr says nothing
+  about is left out. It is read, not focused: it comes into view on the way down.
+- **Cast & Crew**: the whole cast in billing order, a headshot each, the focused one naming the
+  person and whom they play. There is no Seerr person page, so a headshot opens nothing.
+- **Related**: what TMDB recommends with the title, as the Discover shelves' Request cards; the next
+  page is read as the reader walks near the shelf's end, and a card opens its own title page.
 
 The controls stand in one row: the Request pill while there is something to request, then
 **Approve** and **Decline** for a user with Manage Requests (`SeerrStore::may_manage_requests`)

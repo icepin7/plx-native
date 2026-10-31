@@ -18,5 +18,14 @@
   "seerr.menu.folder": "Pasta",
   "seerr.menu.free": "{size} livres",
   "seerr.menu.loading": "A carregar…",
-  "seerr.menu.unavailable": "Não foi possível carregar as opções"
+  "seerr.menu.unavailable": "Não foi possível carregar as opções",
+  "seerr.info.original_language": "Idioma original",
+  "seerr.info.directed_by": "Realizado por",
+  "seerr.info.written_by": "Escrito por",
+  "seerr.info.created_by": "Criado por",
+  "seerr.info.budget": "Orçamento",
+  "seerr.info.revenue": "Bilheteira",
+  "seerr.info.dollars": "{amount} US$",
+  "seerr.info.streaming": "Em streaming",
+  "seerr.title.trailer_failed": "Não foi possível abrir o YouTube."
 }

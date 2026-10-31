@@ -18,5 +18,14 @@
   "seerr.menu.folder": "Mappa",
   "seerr.menu.free": "{size} szabad",
   "seerr.menu.loading": "Betöltés…",
-  "seerr.menu.unavailable": "Nem sikerült betölteni a lehetőségeket"
+  "seerr.menu.unavailable": "Nem sikerült betölteni a lehetőségeket",
+  "seerr.info.original_language": "Eredeti nyelv",
+  "seerr.info.directed_by": "Rendező",
+  "seerr.info.written_by": "Író",
+  "seerr.info.created_by": "Alkotó",
+  "seerr.info.budget": "Költségvetés",
+  "seerr.info.revenue": "Bevétel",
+  "seerr.info.dollars": "{amount} USD",
+  "seerr.info.streaming": "Streaming",
+  "seerr.title.trailer_failed": "Nem sikerült megnyitni a YouTube-ot."
 }
