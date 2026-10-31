@@ -192,6 +192,7 @@ fn content_request(request: &plx_screens::registry::ContentReq) -> Result<Value,
         ContentReq::PreviewTransport(play) => json!({"preview_transport":play}),
         ContentReq::PreviewSeek(position) => json!({"preview_seek":position}),
         ContentReq::ItemMenu => json!("itemmenu"),
+        ContentReq::OpenYouTube(video) => json!({"youtube":video}),
         ContentReq::Panel(panel) => json!({"panel":match panel {
             ContentPanel::AltSources { anchor } => json!({"alt_sources":anchor}),
             ContentPanel::Versions { anchor } => json!({"versions":anchor}),

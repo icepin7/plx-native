@@ -352,6 +352,60 @@ pub fn poll_home() {
     if HOME_MINIMIZE.swap(false, std::sync::atomic::Ordering::AcqRel) { minimize(); }
 }
 
+/// **Open a video in the television's YouTube app** (`tv::youtube::open`, a Seerr title's Trailer):
+/// SAM's `launch` with YouTube's app id and the video as `params.contentTarget`, the shape the YouTube
+/// app reads a deep link from. The call waits on a small worker, as the Home press's does; a refusal,
+/// or no answer, says "Couldn't open YouTube." in a toast, so the press is never one that did nothing.
+///
+/// **Not yet verified on a set:** the id and the `contentTarget` form are community tier (webosbrew's
+/// recipes and the integrations that drive the TV over its network API), which is why the reply is
+/// graded rather than assumed.
+pub fn open_youtube(video: &str) {
+    plx_base::eventlog::log("youtube: request");
+    let video = video.to_string();
+    if !plx_base::task::spawn_small("platform youtube", move || {
+        if !launch_youtube(&video) {
+            let _ = crate::tv::toast::toast(crate::i18n::msg::seerr_title_trailer_failed());
+        }
+    }) {
+        plx_base::eventlog::log("youtube: no worker for the launch — nothing sent");
+    }
+}
+
+/// The YouTube app's id on webOS (community tier, see [`open_youtube`]).
+const YOUTUBE_APP_ID: &str = "youtube.leanback.v4";
+
+#[cfg(any(feature = "hostsim", test, feature = "test-support"))]
+fn launch_youtube(_video: &str) -> bool {
+    plx_base::eventlog::log(&format!("youtube: no LS2 bus off-device — {YOUTUBE_APP_ID} not launched"));
+    false
+}
+
+#[cfg(all(not(feature = "hostsim"), not(any(test, feature = "test-support"))))]
+fn launch_youtube(video: &str) -> bool {
+    let payload = format!(
+        "{{\"id\":\"{YOUTUBE_APP_ID}\",\"params\":{{\"contentTarget\":\"https://www.youtube.com/tv?v={video}\"}}}}"
+    );
+    let started = std::time::Instant::now();
+    let outcome = ls2::call_once("luna://com.webos.applicationManager/launch", &payload);
+    let ms = started.elapsed().as_millis();
+    match outcome {
+        Ok(reply) => {
+            let ok = reply.contains("\"returnValue\":true") || reply.contains("\"returnValue\": true");
+            plx_base::eventlog::log(&format!("youtube: SAM {} in {ms}ms → {reply}", if ok { "accepted" } else { "rejected" }));
+            ok
+        }
+        Err(ls2::Fail::Timeout) => {
+            plx_base::eventlog::log(&format!("youtube: SAM did not answer after {ms}ms"));
+            false
+        }
+        Err(ls2::Fail::Setup { stage, detail, .. }) => {
+            plx_base::eventlog::log(&format!("youtube: LS2 setup failed stage={stage} after {ms}ms {detail}"));
+            false
+        }
+    }
+}
+
 /// The Home launcher's app id.
 ///
 /// Community tier (webosbrew's commands cheatsheet and the widely copied

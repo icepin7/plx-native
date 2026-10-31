@@ -8,6 +8,7 @@ pub mod sink;
 pub mod sound;
 pub mod toast;
 pub mod window;
+pub mod youtube;
 
 use std::os::raw::c_void;
 use std::sync::OnceLock;
@@ -28,6 +29,7 @@ pub struct Port {
     pub go_home: fn(),
     pub poll_home: fn(),
     pub deliver_toast: fn(&str, toast::Identity) -> toast::Sent,
+    pub open_youtube: fn(&str),
     pub bind_window: fn(*mut c_void),
     pub grab_surface: fn(*mut c_void),
     /// Answers whether a surface was held (and so actually let go of).
@@ -64,6 +66,7 @@ static ABSENT: Port = Port {
     go_home: nothing,
     poll_home: nothing,
     deliver_toast: toast::deliver_without_port,
+    open_youtube: |_| {},
     bind_window: |_| {},
     grab_surface: |_| {},
     release_surface: || false,

@@ -21,7 +21,10 @@
 //!   seasons as chips, each with its own state, the overview cut to the hero's lines, and the
 //!   controls. For a user with Manage Requests (`SeerrStore::may_manage_requests`) and a request
 //!   waiting for approval, Approve and Decline stand beside the pill; they answer the newest waiting
-//!   request (`Slot::Decide`). An overview the hero cuts is a stop of its own above the controls,
+//!   request (`Slot::Decide`). A title Seerr knows a YouTube trailer (or teaser) of has a Trailer
+//!   pill last, which hands the video to the television's own YouTube app
+//!   (`ContentReq::OpenYouTube`, `plx_platform::tv::youtube`): this app plays no YouTube itself, and
+//!   leaves the screen to that app while it plays. An overview the hero cuts is a stop of its own above the controls,
 //!   with the app's `MORE`; OK on it reads it in full, with its tagline, in the About sheet
 //!   (`ContentPanel::SeerrAbout`).
 //! - **Information** ([`info`]): release date, age rating, original language, who directed (or
@@ -75,6 +78,8 @@ use crate::registry::{AppFx, ContentArg, ContentPanel, ContentReq, SearchLike};
 pub const PILL_ELEM: u32 = 0;
 pub const APPROVE_ELEM: u32 = 1;
 pub const DECLINE_ELEM: u32 = 2;
+/// The trailer, handed to the television's YouTube app (`ContentReq::OpenYouTube`).
+pub const TRAILER_ELEM: u32 = 3;
 /// The overview, a stop of its own while the hero cuts it.
 pub const SYNOPSIS_ELEM: u32 = 4;
 /// Cast member `i`'s element is this plus `i`.
@@ -315,7 +320,7 @@ struct Page {
     /// that answer landed.
     deciding: Option<i64>,
     decided: bool,
-    pop: CtlPop<3>,
+    pop: CtlPop<4>,
     summary_lift: TextLift,
     /// The hero's stops, the controls first, then the overview while it is cut: what `plain_*`
     /// reads, kept by [`Page::sync`].
@@ -426,6 +431,9 @@ impl Page {
             } else {
                 msg::seerr_decide_decline_c()
             }));
+        }
+        if self.detail(seerr).and_then(TitleDetail::trailer).is_some() {
+            out.push((TRAILER_ELEM, msg::browse_detail_trailer_c()));
         }
         out
     }
@@ -869,6 +877,12 @@ impl SeerrTitleScreen {
                 (self.page.deciding, self.page.decided) = (Some(id), false);
                 Self::ask(Slot::Decide(id), SeerrOp::Decide { id, decision }, fx);
                 fx.invalidate(Provenance::Input);
+            }
+            TRAILER_ELEM => {
+                if let Some(video) = self.page.detail(seerr).and_then(TitleDetail::trailer) {
+                    fx.push(Fx::App(AppFx::Content(ContentReq::OpenYouTube(video.key.clone()))));
+                    fx.invalidate(Provenance::Input);
+                }
             }
             SYNOPSIS_ELEM => {
                 if self.page.elems.contains(&SYNOPSIS_ELEM) {

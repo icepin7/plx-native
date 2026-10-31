@@ -1152,6 +1152,9 @@ pub enum ContentReq {
     /// all.
     PreviewSeek(i64),
     ItemMenu,
+    /// **Open a YouTube video in the television's YouTube app** (a Seerr title's Trailer, docs/seerr.md):
+    /// the app plays no YouTube itself, so the loop asks the platform (`tv::youtube::open`).
+    OpenYouTube(String),
     /// **Present one of the Detail page's own panels** on the container tree (spec §6.2's
     /// "page-owned panels"). The page names WHICH and supplies whatever the panel needs to place
     /// itself; the loop knows the style and the page's identity, so neither is on this request.

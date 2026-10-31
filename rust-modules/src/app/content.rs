@@ -537,6 +537,10 @@ pub(crate) fn content_requests(app: &mut App, fr: &Frame) {
                 }
             }
             ContentReq::Account => chip_activate(&mut app.pages),
+            ContentReq::OpenYouTube(video) => {
+                halt_preview(app);
+                plx_platform::tv::youtube::open(&video);
+            }
             ContentReq::ToHome => bridge::nav_tab(&mut app.pages, &mut app.bridge, HomeTab::Home, None, Some(ret)),
             ContentReq::Play { play, resume_ns } => {
                 let mounted = bridge::player(&app.pages).is_some();

@@ -121,6 +121,7 @@ struct Script {
     /// The title's overview and cast, and how many pages of recommendations the server holds.
     overview: String,
     cast: Vec<CastMember>,
+    videos: Vec<plx_data::seerr::Video>,
     related_pages: u32,
 }
 
@@ -142,6 +143,7 @@ impl SeerrIo for Script {
                 }
                 detail.title.overview = Some(self.overview.clone()).filter(|o| !o.is_empty());
                 detail.cast = self.cast.clone();
+                detail.videos = self.videos.clone();
                 Ok(SeerrData::Detail(detail))
             }
             SeerrOp::Decide { .. } => {
@@ -175,7 +177,7 @@ struct Fixture {
 impl Fixture {
     fn new(permissions: u64, decide: Result<SeerrData, SeerrError>) -> Self {
         Self::with(Script { permissions, decided: Mutex::new(Vec::new()), decide, overview: String::new(), cast: Vec::new(),
-            related_pages: 0 })
+            videos: Vec::new(), related_pages: 0 })
     }
 
     fn with(script: Script) -> Self {
@@ -302,7 +304,7 @@ fn rich(permissions: u64, overview: &str) -> Fixture {
         CastMember { id: 8, name: "s0000ca58".into(), character: String::new(), profile: None },
     ];
     Fixture::with(Script { permissions, decided: Mutex::new(Vec::new()), decide: Ok(SeerrData::Decided),
-        overview: overview.into(), cast, related_pages: 2 })
+        overview: overview.into(), cast, videos: Vec::new(), related_pages: 2 })
 }
 
 /// Long enough that the hero cuts it at every shipped size.
@@ -401,4 +403,23 @@ fn the_related_shelf_holds_each_recommended_title_once_and_opens_it() {
     let out = fixture.step(&mut screen, ScreenEvent::Activate(elem));
     assert!(matches!(panels(&out).as_slice(),
         [ContentReq::Push(ContentArg::SeerrTitle { kind: MediaKind::Movie, tmdb: 201 })]), "its own page");
+}
+
+#[test]
+fn a_title_with_a_trailer_offers_it_last_and_hands_it_to_youtube() {
+    use plx_data::seerr::{Video, VideoKind};
+    let _g = plx_base::testlock::serial();
+    let mut fixture = Fixture::with(Script { permissions: plx_plex::plex::seerr::PERMISSION_ADMIN,
+        decided: Mutex::new(Vec::new()), decide: Ok(SeerrData::Decided), overview: String::new(), cast: Vec::new(),
+        videos: vec![Video { key: "trail-1_A".into(), name: "s0000t".into(), kind: VideoKind::Trailer }], related_pages: 0 });
+    let mut screen = SeerrTitleScreen::new(ENTRY, MediaKind::Movie, 1);
+    fixture.run(&mut screen, ScreenEvent::Mount);
+    assert_eq!(fixture.controls(&screen), [APPROVE_ELEM, DECLINE_ELEM, TRAILER_ELEM]);
+    let out = fixture.step(&mut screen, ScreenEvent::Activate(TRAILER_ELEM));
+    assert!(matches!(panels(&out).as_slice(), [ContentReq::OpenYouTube(video)] if video == "trail-1_A"));
+    let mut bare = Fixture::new(plx_plex::plex::seerr::PERMISSION_ADMIN, Ok(SeerrData::Decided));
+    let mut screen = SeerrTitleScreen::new(ENTRY, MediaKind::Movie, 1);
+    bare.run(&mut screen, ScreenEvent::Mount);
+    assert!(!bare.controls(&screen).contains(&TRAILER_ELEM), "no video, no pill");
+    assert!(panels(&bare.step(&mut screen, ScreenEvent::Activate(TRAILER_ELEM))).is_empty());
 }

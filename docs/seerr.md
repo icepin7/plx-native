@@ -99,7 +99,12 @@ title's backdrop, which fades as the page scrolls, in four parts:
   decision said); the newest request (its state, who asked and when, who approved or declined it);
   the download while one moves (with the amber band); for a show, one chip per season with its own
   state (Available, Partly available, Pending, Processing, Missing, Blocked); the overview, cut to the
-  hero's lines; and the controls. An overview the hero cuts is a stop of its own above the controls
+  hero's lines; and the controls. A title Seerr knows a YouTube trailer (or teaser) of has a
+  **Trailer** pill last, which hands the video to the television's own YouTube app
+  (`ContentReq::OpenYouTube`, `plx_platform::tv::youtube`, SAM's `launch` of `youtube.leanback.v4`
+  with the video as `params.contentTarget`, not yet verified on a set); the app plays no YouTube
+  itself, and a launch the platform refuses says "Couldn't open YouTube." in a toast. An overview the
+  hero cuts is a stop of its own above the controls
   with the app's `MORE`, and OK on it reads it in full, with TMDB's tagline, in the About sheet
   (`ContentPanel::SeerrAbout`). The words a request is described by are written once, in
   `registry::seerr_cards`, for the tab's rows and this page.
