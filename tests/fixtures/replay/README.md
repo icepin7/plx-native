@@ -600,3 +600,12 @@ to 17882145870915066293. All three anchors were recorded again on the merged tre
 interval and halved idle sleeps, passed `plxnative-rec check`, and were installed with
 `tools/plxnative-rec rerecord`, anchors retained. `make check-replay` replays all three with
 `verdict=SAME` in Targets and Resolve and every difference counter at zero.
+
+The Seerr title page's scores, information, cast and Related shelves (Seerr 15/n) added
+`SeerrAbout{tv,tmdb}` to `ARG_SHAPE` and grew `SeerrTitleScreen::SHAPE`, which moved the state shape
+from 5761968157407301149 to 7681416631833084216 (`SCREEN_SHAPES_PIN` `0xfd30_ad44_5520_21c5`). All
+three anchors were recorded again on WSLg (`SDL_VIDEODRIVER=x11`, the debug simulator) with
+`tests/focusfp.sh --rec --only 1,6,12`, passed `plxnative-rec check`, and were installed with
+`tools/plxnative-rec rerecord`, anchors retained. `tests/focusfp.sh --replay --only 1,6,12` replays all
+three with `verdict=SAME` and every difference counter at zero (`make check-replay` needs the macOS
+simulator's host FFmpeg, so it was not run here).
